@@ -1,18 +1,17 @@
 """
 输入捕获模块 - Server 端
-捕获本地鼠标和键盘事件
+捕获本地鼠标和键盘事件，支持边缘检测和相对移动
 """
 from pynput import mouse, keyboard
 from pynput.mouse import Controller as MouseController
 import threading
+import time
 from utils.logger import setup_logger
 
 logger = setup_logger('InputCapture')
 
 
 class InputCapture:
-    """输入捕获类"""
-    
     def __init__(self):
         self._mouse_listener = None
         self._keyboard_listener = None
@@ -20,13 +19,21 @@ class InputCapture:
         self._callbacks = {
             'mouse_move': [],
             'mouse_click': [],
+            'mouse_scroll': [],
             'key_press': [],
-            'key_release': []
+            'key_release': [],
+            'edge_trigger': []  # 边缘触发回调
         }
         self._is_capturing = False
         self._current_pos = (0, 0)
-        self._suppress_mode = False  # 是否处于抑制模式
-        self._last_pos = None  # 用于计算delta
+        self._last_pos = (0, 0)  # 用于计算delta
+        self._focus = True  # 是否聚焦于本机
+        self._suppress_input = False  # 是否抑制输入事件
+        
+        # 边缘检测相关
+        self._edge_threshold = 5  # 边缘阈值像素
+        self._screen_width = 1920
+        self._screen_height = 1080
     
     def start(self):
         """开始捕获输入事件"""
@@ -80,6 +87,43 @@ class InputCapture:
         """获取当前鼠标位置"""
         return self._current_pos
     
+    def set_screen_size(self, width, height):
+        """设置屏幕尺寸"""
+        self._screen_width = width
+        self._screen_height = height
+        logger.debug(f"设置屏幕尺寸: {width}x{height}")
+    
+    def set_edge_threshold(self, threshold):
+        """设置边缘阈值"""
+        self._edge_threshold = threshold
+    
+    def check_edge_trigger(self, x, y):
+        if not self._focus:
+            return None
+        
+        # 检查左边缘
+        if x <= self._edge_threshold:
+            return 'left'
+        # 检查右边缘
+        elif x >= self._screen_width - self._edge_threshold:
+            return 'right'
+        # 检查上边缘
+        elif y <= self._edge_threshold:
+            return 'top'
+        # 检查下边缘
+        elif y >= self._screen_height - self._edge_threshold:
+            return 'bottom'
+        
+        return None
+    
+    def set_focus(self, focus):
+        """设置焦点状态"""
+        self._focus = focus
+        if focus:
+            logger.info("输入焦点回到本机")
+        else:
+            logger.info("输入焦点切换到远程设备")
+    
     def set_suppress(self, suppress):
         """
         设置是否抑制输入
@@ -122,33 +166,37 @@ class InputCapture:
     
     def _on_mouse_move(self, x, y):
         """鼠标移动事件处理"""
-        # 在抑制模式下，手动移动鼠标并计算增量
-        if self._suppress_mode:
-            if self._last_pos:
-                dx = x - self._last_pos[0]
-                dy = y - self._last_pos[1]
-                
-                # 手动移动鼠标到新位置
-                self._mouse_controller.position = (x, y)
-                self._last_pos = (x, y)
-                
-                event = {
-                    'type': 'mouse_move',
-                    'x': x,
-                    'y': y,
-                    'dx': dx,
-                    'dy': dy
-                }
-                self._notify_callbacks('mouse_move', event)
-            else:
-                self._last_pos = (x, y)
+        self._current_pos = (x, y)
+        
+        # 计算增量（相对移动）
+        if self._last_pos:
+            dx = x - self._last_pos[0]
+            dy = y - self._last_pos[1]
         else:
-            # 正常模式
-            self._current_pos = (x, y)
+            dx, dy = 0, 0
+        
+        self._last_pos = (x, y)
+        
+        # 检查边缘触发
+        edge = self.check_edge_trigger(x, y)
+        if edge:
+            event = {
+                'type': 'edge_trigger',
+                'edge': edge,
+                'x': x,
+                'y': y
+            }
+            self._notify_callbacks('edge_trigger', event)
+            return  # 边缘触发时不发送鼠标移动事件
+        
+        # 只有在焦点在本机时才发送鼠标移动事件
+        if self._focus:
             event = {
                 'type': 'mouse_move',
                 'x': x,
-                'y': y
+                'y': y,
+                'dx': dx,
+                'dy': dy
             }
             self._notify_callbacks('mouse_move', event)
     

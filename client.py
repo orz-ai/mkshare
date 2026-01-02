@@ -10,8 +10,8 @@ from core.input_simulator import InputSimulator
 from core.screen_manager import ScreenManager
 from network.client import NetworkClient
 from network.protocol import (
-    MSG_MOUSE_MOVE, MSG_MOUSE_DOWN, MSG_MOUSE_UP,
-    MSG_KEY_DOWN, MSG_KEY_UP, MSG_SWITCH_IN, MSG_SWITCH_OUT
+    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL, MSG_MOUSE_ENTER, MSG_MOUSE_LEAVE,
+    MSG_KEY_PRESS, MSG_KEY_RELEASE, MSG_SWITCH_IN, MSG_SWITCH_OUT
 )
 from utils.logger import setup_logger
 
@@ -119,13 +119,13 @@ class MKShareClient:
         
         if msg_type == MSG_MOUSE_MOVE:
             self._handle_mouse_move(payload)
-        elif msg_type == MSG_MOUSE_DOWN:
-            self._handle_mouse_button(payload, True)
-        elif msg_type == MSG_MOUSE_UP:
-            self._handle_mouse_button(payload, False)
-        elif msg_type == MSG_KEY_DOWN:
+        elif msg_type == MSG_MOUSE_CLICK:
+            self._handle_mouse_button(payload)
+        elif msg_type == MSG_MOUSE_SCROLL:
+            self._handle_mouse_scroll(payload)
+        elif msg_type == MSG_KEY_PRESS:
             self._handle_key(payload, True)
-        elif msg_type == MSG_KEY_UP:
+        elif msg_type == MSG_KEY_RELEASE:
             self._handle_key(payload, False)
         elif msg_type == MSG_SWITCH_IN:
             self._handle_switch_in(payload)
@@ -147,10 +147,17 @@ class MKShareClient:
             logger.debug(f"接收到绝对坐标: x={x}, y={y}")
             self.input_simulator.move_mouse(x, y)
     
-    def _handle_mouse_button(self, payload, pressed):
+    def _handle_mouse_button(self, payload):
         """处理鼠标按键"""
         button = payload.get('button', 1)
+        pressed = payload.get('pressed', False)
         self.input_simulator.click_mouse(button, pressed)
+    
+    def _handle_mouse_scroll(self, payload):
+        """处理鼠标滚轮"""
+        dx = payload.get('dx', 0)
+        dy = payload.get('dy', 0)
+        self.input_simulator.scroll_mouse(dx, dy)
     
     def _handle_key(self, payload, pressed):
         """处理键盘按键"""

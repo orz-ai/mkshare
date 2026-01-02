@@ -6,10 +6,11 @@ import threading
 import time
 from network.protocol import (
     Protocol, HEADER_SIZE,
-    MSG_HELLO, MSG_HELLO_ACK, MSG_PING, MSG_PONG,
-    MSG_MOUSE_MOVE, MSG_MOUSE_DOWN, MSG_MOUSE_UP,
-    MSG_KEY_DOWN, MSG_KEY_UP,
-    MSG_SWITCH_IN, MSG_SWITCH_OUT
+    MSG_REGISTER, MSG_REGISTER_ACK, MSG_HEARTBEAT, MSG_HEARTBEAT_ACK,
+    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL, MSG_MOUSE_ENTER, MSG_MOUSE_LEAVE,
+    MSG_KEY_PRESS, MSG_KEY_RELEASE,
+    MSG_SWITCH_IN, MSG_SWITCH_OUT,
+    build_register_message, build_heartbeat_message
 )
 from utils.logger import setup_logger
 
@@ -97,14 +98,20 @@ class NetworkClient:
             self.callbacks[event_type].append(callback)
     
     def _send_hello(self):
-        """发送握手消息"""
+        """发送设备注册消息"""
         from core.screen_manager import ScreenManager
         
         screen_mgr = ScreenManager()
         device_info = screen_mgr.get_device_info()
         
-        self.send_message(MSG_HELLO, device_info)
-        logger.info("已发送握手消息")
+        # 使用build_register_message
+        packet = build_register_message(
+            device_info.get('device_id', socket.gethostname()),
+            device_info.get('screen_width', 1920),
+            device_info.get('screen_height', 1080)
+        )
+        self._send_packet(packet)
+        logger.info("已发送设备注册消息")
     
     def _ping_loop(self):
         """心跳循环"""
@@ -112,7 +119,8 @@ class NetworkClient:
             try:
                 current_time = time.time()
                 if current_time - self.last_ping_time >= self.ping_interval:
-                    self.send_message(MSG_PING)
+                    packet = build_heartbeat_message()
+                    self._send_packet(packet)
                     self.last_ping_time = current_time
                     logger.debug("发送心跳")
                 
@@ -169,16 +177,16 @@ class NetworkClient:
         """处理接收到的消息"""
         msg_type = message['type']
         
-        if msg_type == MSG_HELLO_ACK:
-            self._handle_hello_ack(message)
-        elif msg_type == MSG_PONG:
+        if msg_type == MSG_REGISTER_ACK:
+            self._handle_register_ack(message)
+        elif msg_type == MSG_HEARTBEAT_ACK:
             logger.debug("收到心跳响应")
         else:
             self._notify_callbacks('message_received', message)
     
-    def _handle_hello_ack(self, message):
-        """处理握手响应"""
-        logger.info(f"握手成功: {message['payload']}")
+    def _handle_register_ack(self, message):
+        """处理注册响应"""
+        logger.info(f"注册成功: {message['payload']}")
         self._notify_callbacks('connected')
     
     def _notify_callbacks(self, event_type, *args):

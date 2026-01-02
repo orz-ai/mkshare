@@ -11,8 +11,8 @@ from core.input_capture import InputCapture
 from core.screen_manager import ScreenManager
 from network.server import NetworkServer
 from network.protocol import (
-    MSG_MOUSE_MOVE, MSG_MOUSE_DOWN, MSG_MOUSE_UP,
-    MSG_KEY_DOWN, MSG_KEY_UP, MSG_SWITCH_IN, MSG_SWITCH_OUT
+    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL,
+    MSG_KEY_PRESS, MSG_KEY_RELEASE, MSG_SWITCH_IN, MSG_SWITCH_OUT
 )
 from utils.logger import setup_logger
 
@@ -134,11 +134,10 @@ class MKShareServer:
         """处理鼠标点击事件"""
         if not self.is_controlling_local and self.network_server.client_connection:
             self.network_server.send_message(
-                MSG_MOUSE_DOWN if event['pressed'] else MSG_MOUSE_UP,
+                MSG_MOUSE_CLICK,
                 {
                     'button': event['button'],
-                    'x': event['x'],
-                    'y': event['y']
+                    'pressed': event['pressed']
                 }
             )
     
@@ -151,12 +150,12 @@ class MKShareServer:
             return
         
         if not self.is_controlling_local and self.network_server.client_connection:
-            self.network_server.send_message(MSG_KEY_DOWN, {'key': event['key']})
+            self.network_server.send_message(MSG_KEY_PRESS, {'key': event['key']})
     
     def _on_key_release(self, event):
         """处理键盘抬起事件"""
         if not self.is_controlling_local and self.network_server.client_connection:
-            self.network_server.send_message(MSG_KEY_UP, {'key': event['key']})
+            self.network_server.send_message(MSG_KEY_RELEASE, {'key': event['key']})
     
     def _switch_to_remote(self):
         """切换到远程控制"""

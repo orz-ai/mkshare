@@ -8,9 +8,9 @@ import struct
 import time
 from network.protocol import (
     Protocol, HEADER_SIZE,
-    MSG_HELLO, MSG_HELLO_ACK, MSG_PING, MSG_PONG, MSG_DISCONNECT,
-    MSG_MOUSE_MOVE, MSG_MOUSE_DOWN, MSG_MOUSE_UP,
-    MSG_KEY_DOWN, MSG_KEY_UP,
+    MSG_REGISTER, MSG_REGISTER_ACK, MSG_HEARTBEAT, MSG_HEARTBEAT_ACK, MSG_DISCONNECT,
+    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL, MSG_MOUSE_ENTER, MSG_MOUSE_LEAVE,
+    MSG_KEY_PRESS, MSG_KEY_RELEASE,
     MSG_SWITCH_IN, MSG_SWITCH_OUT
 )
 from utils.logger import setup_logger
@@ -167,28 +167,27 @@ class NetworkServer:
         """处理接收到的消息"""
         msg_type = message['type']
         
-        if msg_type == MSG_HELLO:
-            self._handle_hello(message)
-        elif msg_type == MSG_PING:
-            self._handle_ping()
+        if msg_type == MSG_REGISTER:
+            self._handle_register(message)
+        elif msg_type == MSG_HEARTBEAT:
+            self._handle_heartbeat()
         else:
             self._notify_callbacks('message_received', message)
     
-    def _handle_hello(self, message):
-        """处理握手消息"""
-        logger.info(f"收到握手消息: {message['payload']}")
+    def _handle_register(self, message):
+        """处理设备注册消息"""
+        logger.info(f"收到设备注册: {message['payload']}")
         
-        # 发送握手响应
+        # 发送注册响应
         response = {
-            'status': 'accepted',
-            'server_name': socket.gethostname(),
-            'message': 'Connection established'
+            'success': True,
+            'message': 'Registration successful'
         }
-        self.send_message(MSG_HELLO_ACK, response)
+        self.send_message(MSG_REGISTER_ACK, response)
     
-    def _handle_ping(self):
+    def _handle_heartbeat(self):
         """处理心跳"""
-        self.send_message(MSG_PONG)
+        self.send_message(MSG_HEARTBEAT_ACK)
     
     def _notify_callbacks(self, event_type, *args):
         """通知回调函数"""
