@@ -136,7 +136,7 @@ class NetworkServer:
                         buffer = buffer[1:]  # 跳过一个字节
                         continue
                     
-                    total_size = HEADER_SIZE - 4 + header['length'] + 4
+                    total_size = HEADER_SIZE + header['length'] + 4  # header + payload + checksum(4)
                     if len(buffer) < total_size:
                         break
                     

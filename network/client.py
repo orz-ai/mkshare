@@ -142,7 +142,7 @@ class NetworkClient:
                         buffer = buffer[1:]
                         continue
                     
-                    total_size = HEADER_SIZE - 4 + header['length'] + 4
+                    total_size = HEADER_SIZE + header['length'] + 4  # header + payload + checksum(4)
                     if len(buffer) < total_size:
                         break
                     

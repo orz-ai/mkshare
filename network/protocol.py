@@ -25,8 +25,8 @@ MSG_KEY_UP = 0x21          # 键盘抬起
 MSG_SWITCH_IN = 0x30       # 切换到此设备
 MSG_SWITCH_OUT = 0x31      # 切换离开此设备
 
-# 包头大小
-HEADER_SIZE = 26  # 1+1+1+1+4+4+8+4+2 (预留2字节对齐)
+# 包头大小: magic(1) + version(1) + type(1) + flag(1) + length(4) + sequence(4) + timestamp(8) = 20
+HEADER_SIZE = 20
 
 
 class Protocol:
@@ -81,7 +81,7 @@ class Protocol:
         
         try:
             magic, version, msg_type, flag, length, sequence, timestamp = struct.unpack(
-                '!BBBBI IQ', data[:22]
+                '!BBBBI IQ', data[:20]
             )
             
             if magic != 0x4D:
@@ -106,7 +106,7 @@ class Protocol:
         :param header: 已解析的包头
         :return: message dict
         """
-        payload_start = HEADER_SIZE - 4  # 减去预留的2字节和校验和4字节
+        payload_start = HEADER_SIZE
         payload_end = payload_start + header['length']
         payload = packet[payload_start:payload_end]
         
