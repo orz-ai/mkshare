@@ -58,6 +58,9 @@ class MKShareServer:
         self.input_capture = InputCapture()
         self.input_capture.set_screen_size(screen_width, screen_height)
         self.input_capture.set_edge_threshold(edge_threshold)
+        # 设置屏幕尺寸（用于鼠标拉回中央）
+        self.input_capture._screen_width = self.screen_manager.width
+        self.input_capture._screen_height = self.screen_manager.height
         self.input_capture.register_callback('mouse_move', self._on_mouse_move)
         self.input_capture.register_callback('mouse_click', self._on_mouse_click)
         self.input_capture.register_callback('key_press', self._on_key_press)

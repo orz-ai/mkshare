@@ -171,28 +171,42 @@ class InputCapture:
         
         self._last_pos = (x, y)
         
-        # 检查边缘触发
-        edge = self.check_edge_trigger(x, y)
-        if edge:
-            event = {
-                'type': 'edge_trigger',
-                'edge': edge,
-                'x': x,
-                'y': y
-            }
-            self._notify_callbacks('edge_trigger', event)
-            return  # 边缘触发时不发送鼠标移动事件
+        # 检查边缘触发（只在focus=True时）
+        if self._focus:
+            edge = self.check_edge_trigger(x, y)
+            if edge:
+                event = {
+                    'type': 'edge_trigger',
+                    'edge': edge,
+                    'x': x,
+                    'y': y
+                }
+                self._notify_callbacks('edge_trigger', event)
+                return  # 边缘触发时不发送鼠标移动事件
         
         # focus=False时发送到远程，focus=True时不发送（只在本地）
         if not self._focus:
-            event = {
-                'type': 'mouse_move',
-                'x': x,
-                'y': y,
-                'dx': dx,
-                'dy': dy
-            }
-            self._notify_callbacks('mouse_move', event)
+            # 发送相对移动增量
+            if abs(dx) > 0 or abs(dy) > 0:
+                event = {
+                    'type': 'mouse_move',
+                    'x': x,
+                    'y': y,
+                    'dx': dx,
+                    'dy': dy
+                }
+                self._notify_callbacks('mouse_move', event)
+            
+            # 关键：定期将鼠标拉回屏幕中央（类似FPS游戏的鼠标捕获）
+            # 当鼠标接近边缘时，拉回中央以持续获得大的移动增量
+            margin = 200  # 距离边缘的安全距离
+            if (x <= margin or x >= self._screen_width - margin or 
+                y <= margin or y >= self._screen_height - margin):
+                center_x = self._screen_width // 2
+                center_y = self._screen_height // 2
+                self._mouse_controller.position = (center_x, center_y)
+                self._last_pos = (center_x, center_y)
+                logger.info(f"[鼠标捕获] 拉回中央: ({center_x}, {center_y})")
     
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件处理"""
