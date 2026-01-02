@@ -28,7 +28,6 @@ class InputCapture:
         self._current_pos = (0, 0)
         self._last_pos = (0, 0)  # 用于计算delta
         self._focus = True  # 是否聚焦于本机
-        self._suppress_input = False  # 是否抑制输入事件
         
         # 边缘检测相关
         self._edge_threshold = 5  # 边缘阈值像素
@@ -123,46 +122,6 @@ class InputCapture:
             logger.info("输入焦点回到本机")
         else:
             logger.info("输入焦点切换到远程设备")
-    
-    def set_suppress(self, suppress):
-        """
-        设置是否抑制输入
-        :param suppress: True=抑制输入, False=正常
-        """
-        if self._suppress_mode == suppress:
-            return
-            
-        self._suppress_mode = suppress
-        
-        # 重启监听器以应用新的suppress设置
-        if self._is_capturing:
-            if self._mouse_listener:
-                self._mouse_listener.stop()
-            if self._keyboard_listener:
-                self._keyboard_listener.stop()
-            
-            # 重新创建监听器
-            self._mouse_listener = mouse.Listener(
-                on_move=self._on_mouse_move,
-                on_click=self._on_mouse_click,
-                on_scroll=self._on_mouse_scroll,
-                suppress=suppress
-            )
-            self._mouse_listener.start()
-            
-            self._keyboard_listener = keyboard.Listener(
-                on_press=self._on_key_press,
-                on_release=self._on_key_release,
-                suppress=suppress
-            )
-            self._keyboard_listener.start()
-            
-            if suppress:
-                self._last_pos = self._mouse_controller.position
-            else:
-                self._last_pos = None
-                
-        logger.info(f"输入抑制已{'开启' if suppress else '关闭'}")
     
     def _on_mouse_move(self, x, y):
         """鼠标移动事件处理"""

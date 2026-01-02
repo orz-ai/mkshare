@@ -110,8 +110,11 @@ class NetworkClient:
             device_info.get('screen_width', 1920),
             device_info.get('screen_height', 1080)
         )
-        self._send_packet(packet)
-        logger.info("已发送设备注册消息")
+        try:
+            self.socket.sendall(packet)
+            logger.info("已发送设备注册消息")
+        except Exception as e:
+            logger.error(f"发送注册消息失败: {e}")
     
     def _ping_loop(self):
         """心跳循环"""
@@ -120,7 +123,7 @@ class NetworkClient:
                 current_time = time.time()
                 if current_time - self.last_ping_time >= self.ping_interval:
                     packet = build_heartbeat_message()
-                    self._send_packet(packet)
+                    self.socket.sendall(packet)
                     self.last_ping_time = current_time
                     logger.debug("发送心跳")
                 

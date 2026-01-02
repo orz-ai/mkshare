@@ -164,8 +164,8 @@ class MKShareServer:
             return
         
         self.is_controlling_local = False
-        # 启用输入抑制
-        self.input_capture.set_suppress(True)
+        # 设置focus=False，停止发送本地输入
+        self.input_capture.set_focus(False)
         # 发送切换消息，包含触发的边缘方向
         self.network_server.send_message(MSG_SWITCH_IN, {'edge': self._trigger_edge})
         logger.info("已切换到远程控制模式")
@@ -173,8 +173,8 @@ class MKShareServer:
     def _switch_to_local(self):
         """切换回本地控制"""
         self.is_controlling_local = True
-        # 关闭输入抑制
-        self.input_capture.set_suppress(False)
+        # 恢复focus=True，回到本地控制
+        self.input_capture.set_focus(True)
         # 重置位置记录
         self._last_mouse_pos = None
         self._trigger_edge = None
