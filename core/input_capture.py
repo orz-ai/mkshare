@@ -77,7 +77,9 @@ class InputCapture:
     
     def get_current_pos(self):
         """获取当前鼠标位置"""
-        set_suppress(self, suppress):
+        return self._current_pos
+    
+    def set_suppress(self, suppress):
         """
         设置是否拦截输入事件
         :param suppress: True=拦截事件不传递给系统, False=正常传递
@@ -96,8 +98,6 @@ class InputCapture:
         self._notify_callbacks('mouse_move', event)
         # 返回False表示拦截事件，True表示继续传递
         return not self._suppress_input
-        }
-        self._notify_callbacks('mouse_move', event)
     
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件处理"""
@@ -109,8 +109,6 @@ class InputCapture:
             mouse.Button.right: 2,
             mouse.Button.middle: 3
         }
-        # 返回False表示拦截事件，True表示继续传递
-        return not self._suppress_input
         button_code = button_map.get(button, 1)
         
         event = {
@@ -121,6 +119,8 @@ class InputCapture:
             'y': y
         }
         self._notify_callbacks('mouse_click', event)
+        # 返回False表示拦截事件，True表示继续传递
+        return not self._suppress_input
     
     def _on_mouse_scroll(self, x, y, dx, dy):
         """鼠标滚轮事件处理"""
@@ -134,6 +134,8 @@ class InputCapture:
             'type': 'key_press',
             'key': key_info['key'],
             'char': key_info['char']
+        }
+        self._notify_callbacks('key_press', event)
         # 返回False表示拦截事件，True表示继续传递
         return not self._suppress_input
     
@@ -148,8 +150,6 @@ class InputCapture:
         self._notify_callbacks('key_release', event)
         # 返回False表示拦截事件，True表示继续传递
         return not self._suppress_input
-        }
-        self._notify_callbacks('key_release', event)
     
     @staticmethod
     def _get_key_info(key):
