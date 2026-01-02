@@ -32,25 +32,27 @@ class InputCapture:
             return
         
         self._is_capturing = True
-        
-        # 启动鼠标监听 - 使用suppress参数来拦截事件
+        self._start_listeners()
+        logger.info("输入捕获已启动")
+    
+    def _start_listeners(self):
+        """启动监听器"""
+        # 启动鼠标监听
         self._mouse_listener = mouse.Listener(
             on_move=self._on_mouse_move,
             on_click=self._on_mouse_click,
             on_scroll=self._on_mouse_scroll,
-            suppress=False  # 初始不拦截
+            suppress=self._suppress_input  # 根据标志决定是否拦截
         )
         self._mouse_listener.start()
         
-        # 启动键盘监听 - 使用suppress参数来拦截事件
+        # 启动键盘监听
         self._keyboard_listener = keyboard.Listener(
             on_press=self._on_key_press,
             on_release=self._on_key_release,
-            suppress=False  # 初始不拦截
+            suppress=self._suppress_input  # 根据标志决定是否拦截
         )
         self._keyboard_listener.start()
-        
-        logger.info("输入捕获已启动")
     
     def stop(self):
         """停止捕获输入事件"""
@@ -84,7 +86,22 @@ class InputCapture:
         设置是否拦截输入事件
         :param suppress: True=拦截事件不传递给系统, False=正常传递
         """
+        if self._suppress_input == suppress:
+            return
+        
         self._suppress_input = suppress
+        
+        # 需要重新创建监听器才能改变suppress行为
+        if self._is_capturing:
+            # 先停止旧的监听器
+            if self._mouse_listener:
+                self._mouse_listener.stop()
+            if self._keyboard_listener:
+                self._keyboard_listener.stop()
+            
+            # 重新启动监听器
+            self._start_listeners()
+        
         logger.info(f"输入拦截已{'开启' if suppress else '关闭'}")
     
     def _on_mouse_move(self, x, y):
@@ -96,8 +113,6 @@ class InputCapture:
             'y': y
         }
         self._notify_callbacks('mouse_move', event)
-        # 返回False表示拦截事件，True表示继续传递
-        return not self._suppress_input
     
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件处理"""
@@ -119,8 +134,6 @@ class InputCapture:
             'y': y
         }
         self._notify_callbacks('mouse_click', event)
-        # 返回False表示拦截事件，True表示继续传递
-        return not self._suppress_input
     
     def _on_mouse_scroll(self, x, y, dx, dy):
         """鼠标滚轮事件处理"""
@@ -136,8 +149,6 @@ class InputCapture:
             'char': key_info['char']
         }
         self._notify_callbacks('key_press', event)
-        # 返回False表示拦截事件，True表示继续传递
-        return not self._suppress_input
     
     def _on_key_release(self, key):
         """键盘抬起事件处理"""
@@ -148,8 +159,6 @@ class InputCapture:
             'char': key_info['char']
         }
         self._notify_callbacks('key_release', event)
-        # 返回False表示拦截事件，True表示继续传递
-        return not self._suppress_input
     
     @staticmethod
     def _get_key_info(key):
