@@ -48,12 +48,14 @@ class InputSimulator:
         :param y: Y坐标
         """
         if not self._is_active:
+            logger.warning(f"[输入模拟器] 未激活，忽略绝对移动: x={x}, y={y}")
             return
         
         try:
             self._mouse.position = (x, y)
+            logger.info(f"[输入模拟器] 移动鼠标到绝对坐标: ({x}, {y})")
         except Exception as e:
-            logger.error(f"移动鼠标失败: {e}")
+            logger.error(f"[输入模拟器] 移动鼠标失败: {e}")
     
     def move_mouse_relative(self, dx, dy):
         """
@@ -62,7 +64,7 @@ class InputSimulator:
         :param dy: Y方向移动量
         """
         if not self._is_active:
-            logger.debug(f"输入模拟未激活，忽略相对移动: dx={dx}, dy={dy}")
+            logger.warning(f"[输入模拟器] 未激活，忽略相对移动: dx={dx}, dy={dy}")
             return
         
         try:
@@ -70,9 +72,9 @@ class InputSimulator:
             new_x = current_x + dx
             new_y = current_y + dy
             self._mouse.position = (new_x, new_y)
-            logger.debug(f"相对移动鼠标: ({current_x}, {current_y}) + ({dx}, {dy}) -> ({new_x}, {new_y})")
+            logger.info(f"[输入模拟器] 相对移动鼠标: ({current_x}, {current_y}) + ({dx}, {dy}) -> ({new_x}, {new_y})")
         except Exception as e:
-            logger.error(f"相对移动鼠标失败: {e}")
+            logger.error(f"[输入模拟器] 相对移动鼠标失败: {e}")
     
     def set_entry_position(self, edge, screen_manager):
         """

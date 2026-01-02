@@ -140,13 +140,15 @@ class MKShareClient:
         if 'dx' in payload and 'dy' in payload:
             dx = payload['dx']
             dy = payload['dy']
-            logger.debug(f"接收到相对移动: dx={dx}, dy={dy}")
+            is_active = self.input_simulator._is_active
+            logger.info(f"[鼠标移动] 接收到相对移动: dx={dx}, dy={dy}, 输入模拟器状态: {'激活' if is_active else '未激活'}")
             self.input_simulator.move_mouse_relative(dx, dy)
         else:
             # 向后兼容：绝对坐标
             x = payload.get('x', 0)
             y = payload.get('y', 0)
-            logger.debug(f"接收到绝对坐标: x={x}, y={y}")
+            is_active = self.input_simulator._is_active
+            logger.info(f"[鼠标移动] 接收到绝对坐标: x={x}, y={y}, 输入模拟器状态: {'激活' if is_active else '未激活'}")
             self.input_simulator.move_mouse(x, y)
     
     def _handle_mouse_enter(self, payload):
@@ -155,7 +157,13 @@ class MKShareClient:
         y = payload.get('y', 0)
         edge = payload.get('edge', 'unknown')
         logger.info(f"鼠标从边缘进入: edge={edge}, 设置初始位置: x={x}, y={y}")
+        
+        # 立即激活输入模拟器，确保后续移动能生效
+        self.input_simulator.activate()
+        
+        # 设置初始位置
         self.input_simulator.move_mouse(x, y)
+        logger.info(f"已激活输入模拟器并设置初始位置: ({x}, {y})")
     
     def _handle_mouse_button(self, payload):
         """处理鼠标按键"""
