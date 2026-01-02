@@ -31,6 +31,7 @@ class MKShareServer:
         self.is_controlling_local = True  # True=控制本地, False=控制远程
         self._last_mouse_pos = None  # 记录上一次鼠标位置，用于计算delta
         self._trigger_edge = None  # 记录触发的边缘方向
+        self._movement_threshold = 3  # 移动阈值，小于此值的移动将被忽略
         
         # 配置日志级别
         log_level = self.config.get('logging.level', 'INFO')
@@ -116,9 +117,18 @@ class MKShareServer:
             if self._last_mouse_pos:
                 dx = x - self._last_mouse_pos[0]
                 dy = y - self._last_mouse_pos[1]
-                logger.debug(f"发送相对移动: dx={dx}, dy={dy}, 当前位置=({x}, {y})")
-                self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
-            self._last_mouse_pos = (x, y)
+                
+                # 只有移动超过阈值才发送，避免微小晃动
+                distance = abs(dx) + abs(dy)
+                if distance >= self._movement_threshold:
+                    logger.debug(f"发送相对移动: dx={dx}, dy={dy}, 距离={distance}")
+                    self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
+                    self._last_mouse_pos = (x, y)
+                else:
+                    logger.debug(f"忽略微小移动: dx={dx}, dy={dy}, 距离={distance} < 阈值{self._movement_threshold}")
+            else:
+                # 第一次移动，记录位置但不发送
+                self._last_mouse_pos = (x, y)
     
     def _on_mouse_click(self, event):
         """处理鼠标点击事件"""
