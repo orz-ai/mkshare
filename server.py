@@ -49,12 +49,20 @@ class MKShareServer:
         edge_delay = self.config.get('screen_switch.edge_delay', 0.3)
         self.screen_manager = ScreenManager(edge_threshold, edge_delay)
         
+        # 获取主屏幕尺寸
+        primary_screen = self.screen_manager.get_primary_screen()
+        screen_width = primary_screen['width']
+        screen_height = primary_screen['height']
+        
         # 初始化输入捕获
         self.input_capture = InputCapture()
+        self.input_capture.set_screen_size(screen_width, screen_height)
+        self.input_capture.set_edge_threshold(edge_threshold)
         self.input_capture.register_callback('mouse_move', self._on_mouse_move)
         self.input_capture.register_callback('mouse_click', self._on_mouse_click)
         self.input_capture.register_callback('key_press', self._on_key_press)
         self.input_capture.register_callback('key_release', self._on_key_release)
+        self.input_capture.register_callback('edge_trigger', self._on_edge_trigger)
         self.input_capture.start()
         
         # 初始化网络服务器
@@ -98,19 +106,22 @@ class MKShareServer:
         finally:
             self.stop()
     
+    def _on_edge_trigger(self, event):
+        """处理边缘触发事件（类似DeviceShare的judge_move_out）"""
+        if not self.is_controlling_local:
+            return
+        
+        edge = event['edge']
+        x, y = event['x'], event['y']
+        logger.info(f"触发边缘切换: {edge} at ({x}, {y})")
+        
+        self._trigger_edge = edge
+        self._last_mouse_pos = (x, y)
+        self._switch_to_remote()
+    
     def _on_mouse_move(self, event):
         """处理鼠标移动事件"""
         x, y = event['x'], event['y']
-        
-        # 检查是否触发边缘切换
-        if self.is_controlling_local:
-            triggered, edge = self.screen_manager.check_edge_trigger(x, y)
-            if triggered:
-                logger.info(f"触发边缘切换: {edge}")
-                self._trigger_edge = edge
-                self._last_mouse_pos = (x, y)
-                self._switch_to_remote()
-                return
         
         # 如果正在控制远程，发送鼠标移动增量
         if not self.is_controlling_local and self.network_server.client_connection:
