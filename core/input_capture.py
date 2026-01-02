@@ -3,6 +3,7 @@
 捕获本地鼠标和键盘事件
 """
 from pynput import mouse, keyboard
+from pynput.mouse import Controller as MouseController
 import threading
 from utils.logger import setup_logger
 
@@ -15,6 +16,7 @@ class InputCapture:
     def __init__(self):
         self._mouse_listener = None
         self._keyboard_listener = None
+        self._mouse_controller = MouseController()
         self._callbacks = {
             'mouse_move': [],
             'mouse_click': [],
@@ -23,6 +25,8 @@ class InputCapture:
         }
         self._is_capturing = False
         self._current_pos = (0, 0)
+        self._suppress_mode = False  # 是否处于抑制模式
+        self._last_pos = None  # 用于计算delta
     
     def start(self):
         """开始捕获输入事件"""
@@ -76,15 +80,77 @@ class InputCapture:
         """获取当前鼠标位置"""
         return self._current_pos
     
+    def set_suppress(self, suppress):
+        """
+        设置是否抑制输入
+        :param suppress: True=抑制输入, False=正常
+        """
+        if self._suppress_mode == suppress:
+            return
+            
+        self._suppress_mode = suppress
+        
+        # 重启监听器以应用新的suppress设置
+        if self._is_capturing:
+            if self._mouse_listener:
+                self._mouse_listener.stop()
+            if self._keyboard_listener:
+                self._keyboard_listener.stop()
+            
+            # 重新创建监听器
+            self._mouse_listener = mouse.Listener(
+                on_move=self._on_mouse_move,
+                on_click=self._on_mouse_click,
+                on_scroll=self._on_mouse_scroll,
+                suppress=suppress
+            )
+            self._mouse_listener.start()
+            
+            self._keyboard_listener = keyboard.Listener(
+                on_press=self._on_key_press,
+                on_release=self._on_key_release,
+                suppress=suppress
+            )
+            self._keyboard_listener.start()
+            
+            if suppress:
+                self._last_pos = self._mouse_controller.position
+            else:
+                self._last_pos = None
+                
+        logger.info(f"输入抑制已{'开启' if suppress else '关闭'}")
+    
     def _on_mouse_move(self, x, y):
         """鼠标移动事件处理"""
-        self._current_pos = (x, y)
-        event = {
-            'type': 'mouse_move',
-            'x': x,
-            'y': y
-        }
-        self._notify_callbacks('mouse_move', event)
+        # 在抑制模式下，手动移动鼠标并计算增量
+        if self._suppress_mode:
+            if self._last_pos:
+                dx = x - self._last_pos[0]
+                dy = y - self._last_pos[1]
+                
+                # 手动移动鼠标到新位置
+                self._mouse_controller.position = (x, y)
+                self._last_pos = (x, y)
+                
+                event = {
+                    'type': 'mouse_move',
+                    'x': x,
+                    'y': y,
+                    'dx': dx,
+                    'dy': dy
+                }
+                self._notify_callbacks('mouse_move', event)
+            else:
+                self._last_pos = (x, y)
+        else:
+            # 正常模式
+            self._current_pos = (x, y)
+            event = {
+                'type': 'mouse_move',
+                'x': x,
+                'y': y
+            }
+            self._notify_callbacks('mouse_move', event)
     
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件处理"""

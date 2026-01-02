@@ -112,17 +112,23 @@ class MKShareServer:
                 self._switch_to_remote()
                 return
         
-        # 如果正在控制远程，计算并发送鼠标移动增量
+        # 如果正在控制远程，发送鼠标移动增量
         if not self.is_controlling_local and self.network_server.client_connection:
-            if self._last_mouse_pos:
-                dx = x - self._last_mouse_pos[0]
-                dy = y - self._last_mouse_pos[1]
-                
-                # 发送移动增量
+            # 在抑制模式下，event包含dx/dy
+            if 'dx' in event and 'dy' in event:
+                dx = event['dx']
+                dy = event['dy']
                 if abs(dx) > 0 or abs(dy) > 0:
                     self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
-            
-            self._last_mouse_pos = (x, y)
+            elif self._last_mouse_pos:
+                # 降级方案：自己计算
+                dx = x - self._last_mouse_pos[0]
+                dy = y - self._last_mouse_pos[1]
+                if abs(dx) > 0 or abs(dy) > 0:
+                    self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
+                self._last_mouse_pos = (x, y)
+            else:
+                self._last_mouse_pos = (x, y)
     
     def _on_mouse_click(self, event):
         """处理鼠标点击事件"""
@@ -159,6 +165,8 @@ class MKShareServer:
             return
         
         self.is_controlling_local = False
+        # 启用输入抑制
+        self.input_capture.set_suppress(True)
         # 发送切换消息，包含触发的边缘方向
         self.network_server.send_message(MSG_SWITCH_IN, {'edge': self._trigger_edge})
         logger.info("已切换到远程控制模式")
@@ -166,6 +174,8 @@ class MKShareServer:
     def _switch_to_local(self):
         """切换回本地控制"""
         self.is_controlling_local = True
+        # 关闭输入抑制
+        self.input_capture.set_suppress(False)
         # 重置位置记录
         self._last_mouse_pos = None
         self._trigger_edge = None
