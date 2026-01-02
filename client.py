@@ -149,6 +149,14 @@ class MKShareClient:
             logger.debug(f"接收到绝对坐标: x={x}, y={y}")
             self.input_simulator.move_mouse(x, y)
     
+    def _handle_mouse_enter(self, payload):
+        """处理鼠标进入消息（从边缘进入）"""
+        x = payload.get('x', 0)
+        y = payload.get('y', 0)
+        edge = payload.get('edge', 'unknown')
+        logger.info(f"鼠标从边缘进入: edge={edge}, 设置初始位置: x={x}, y={y}")
+        self.input_simulator.move_mouse(x, y)
+    
     def _handle_mouse_button(self, payload):
         """处理鼠标按键"""
         button = payload.get('button', 1)
