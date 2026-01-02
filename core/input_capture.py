@@ -34,7 +34,7 @@ class InputCapture:
         self._screen_width = 1920
         self._screen_height = 1080
     
-    def start(self):
+    def start(self, suppress=False):
         """开始捕获输入事件"""
         if self._is_capturing:
             logger.warning("输入捕获已在运行")
@@ -42,22 +42,24 @@ class InputCapture:
         
         self._is_capturing = True
         
-        # 启动鼠标监听
+        # 启动鼠标监听 (suppress=True会抑制本地响应)
         self._mouse_listener = mouse.Listener(
             on_move=self._on_mouse_move,
             on_click=self._on_mouse_click,
-            on_scroll=self._on_mouse_scroll
+            on_scroll=self._on_mouse_scroll,
+            suppress=suppress
         )
         self._mouse_listener.start()
         
         # 启动键盘监听
         self._keyboard_listener = keyboard.Listener(
             on_press=self._on_key_press,
-            on_release=self._on_key_release
+            on_release=self._on_key_release,
+            suppress=suppress
         )
         self._keyboard_listener.start()
         
-        logger.info("输入捕获已启动")
+        logger.info(f"输入捕获已启动 (suppress={suppress})")
     
     def stop(self):
         """停止捕获输入事件"""
@@ -116,12 +118,45 @@ class InputCapture:
         return None
     
     def set_focus(self, focus):
-        """设置焦点状态"""
+        """设置焦点状态（类似DeviceShare的focus，切换时重启监听器）"""
+        if self._focus == focus:
+            return
+        
         self._focus = focus
+        
+        # 重启监听器以应用suppress（关键！）
+        if self._is_capturing:
+            logger.info(f"重启监听器: focus={focus}")
+            
+            # 停止旧监听器
+            if self._mouse_listener:
+                self._mouse_listener.stop()
+            if self._keyboard_listener:
+                self._keyboard_listener.stop()
+            
+            # 启动新监听器
+            # focus=False时suppress=True，抑制本地响应
+            suppress = not focus
+            
+            self._mouse_listener = mouse.Listener(
+                on_move=self._on_mouse_move,
+                on_click=self._on_mouse_click,
+                on_scroll=self._on_mouse_scroll,
+                suppress=suppress
+            )
+            self._mouse_listener.start()
+            
+            self._keyboard_listener = keyboard.Listener(
+                on_press=self._on_key_press,
+                on_release=self._on_key_release,
+                suppress=suppress
+            )
+            self._keyboard_listener.start()
+        
         if focus:
             logger.info("输入焦点回到本机")
         else:
-            logger.info("输入焦点切换到远程设备")
+            logger.info("输入焦点切换到远程设备，本地输入已抑制")
     
     def _on_mouse_move(self, x, y):
         """鼠标移动事件处理"""

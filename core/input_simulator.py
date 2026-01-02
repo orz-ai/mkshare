@@ -2,6 +2,7 @@
 输入模拟模块 - Client 端
 模拟鼠标和键盘操作
 """
+import platform
 from pynput.mouse import Controller as MouseController, Button
 from pynput.keyboard import Controller as KeyboardController, Key
 from utils.logger import setup_logger
@@ -13,6 +14,14 @@ class InputSimulator:
     """输入模拟类"""
     
     def __init__(self):
+        # 解决Windows下缩放偏移问题（关键！参考DeviceShare）
+        if platform.system().lower() == 'windows':
+            import ctypes
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except:
+                pass  # 如果已经设置过就忽略
+        
         self._mouse = MouseController()
         self._keyboard = KeyboardController()
         self._is_active = False
