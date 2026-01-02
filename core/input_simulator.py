@@ -34,7 +34,7 @@ class InputSimulator:
     
     def move_mouse(self, x, y):
         """
-        移动鼠标
+        移动鼠标到绝对坐标
         :param x: X坐标
         :param y: Y坐标
         """
@@ -45,6 +45,70 @@ class InputSimulator:
             self._mouse.position = (x, y)
         except Exception as e:
             logger.error(f"移动鼠标失败: {e}")
+    
+    def move_mouse_relative(self, dx, dy):
+        """
+        相对移动鼠标
+        :param dx: X方向移动量
+        :param dy: Y方向移动量
+        """
+        if not self._is_active:
+            return
+        
+        try:
+            current_x, current_y = self._mouse.position
+            self._mouse.position = (current_x + dx, current_y + dy)
+        except Exception as e:
+            logger.error(f"相对移动鼠标失败: {e}")
+    
+    def set_entry_position(self, edge, screen_manager):
+        """
+        根据server的退出边缘，设置client的进入位置
+        :param edge: server退出的边缘方向 ('left', 'right', 'top', 'bottom')
+        :param screen_manager: 屏幕管理器
+        """
+        try:
+            primary_screen = screen_manager.get_primary_screen()
+            if not primary_screen:
+                return
+            
+            # server从某边缘出去，client从相对的边缘进入
+            edge_map = {
+                'right': 'left',   # server右边出 -> client左边进
+                'left': 'right',   # server左边出 -> client右边进
+                'top': 'bottom',   # server上边出 -> client下边进
+                'bottom': 'top'    # server下边出 -> client上边进
+            }
+            
+            enter_edge = edge_map.get(edge, 'left')
+            
+            # 获取屏幕中心Y坐标
+            center_y = primary_screen['y'] + primary_screen['height'] // 2
+            center_x = primary_screen['x'] + primary_screen['width'] // 2
+            
+            # 根据进入边缘设置位置
+            if enter_edge == 'left':
+                # 从左边进入，设置在左边缘
+                x = primary_screen['x'] + 10
+                y = center_y
+            elif enter_edge == 'right':
+                # 从右边进入，设置在右边缘
+                x = primary_screen['x'] + primary_screen['width'] - 10
+                y = center_y
+            elif enter_edge == 'top':
+                # 从上边进入，设置在上边缘
+                x = center_x
+                y = primary_screen['y'] + 10
+            else:  # bottom
+                # 从下边进入，设置在下边缘
+                x = center_x
+                y = primary_screen['y'] + primary_screen['height'] - 10
+            
+            self._mouse.position = (x, y)
+            logger.info(f"鼠标从{enter_edge}边缘进入，位置: ({x}, {y})")
+            
+        except Exception as e:
+            logger.error(f"设置进入位置失败: {e}")
     
     def click_mouse(self, button, pressed):
         """

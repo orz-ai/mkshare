@@ -29,6 +29,8 @@ class MKShareServer:
         self.network_server = None
         self.running = False
         self.is_controlling_local = True  # True=控制本地, False=控制远程
+        self._last_mouse_pos = None  # 记录上一次鼠标位置，用于计算delta
+        self._trigger_edge = None  # 记录触发的边缘方向
         
         # 配置日志级别
         log_level = self.config.get('logging.level', 'INFO')
@@ -104,11 +106,18 @@ class MKShareServer:
             triggered, edge = self.screen_manager.check_edge_trigger(x, y)
             if triggered:
                 logger.info(f"触发边缘切换: {edge}")
+                self._trigger_edge = edge
+                self._last_mouse_pos = (x, y)
                 self._switch_to_remote()
+                return
         
-        # 如果正在控制远程，发送鼠标移动事件
+        # 如果正在控制远程，发送鼠标移动增量
         if not self.is_controlling_local and self.network_server.client_connection:
-            self.network_server.send_message(MSG_MOUSE_MOVE, {'x': x, 'y': y})
+            if self._last_mouse_pos:
+                dx = x - self._last_mouse_pos[0]
+                dy = y - self._last_mouse_pos[1]
+                self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
+            self._last_mouse_pos = (x, y)
     
     def _on_mouse_click(self, event):
         """处理鼠标点击事件"""
@@ -147,7 +156,8 @@ class MKShareServer:
         self.is_controlling_local = False
         # 开启输入拦截，防止输入影响本地系统
         self.input_capture.set_suppress(True)
-        self.network_server.send_message(MSG_SWITCH_IN)
+        # 发送切换消息，包含触发的边缘方向
+        self.network_server.send_message(MSG_SWITCH_IN, {'edge': self._trigger_edge})
         logger.info("已切换到远程控制模式")
     
     def _switch_to_local(self):
@@ -155,6 +165,9 @@ class MKShareServer:
         self.is_controlling_local = True
         # 关闭输入拦截，恢复本地控制
         self.input_capture.set_suppress(False)
+        # 重置位置记录
+        self._last_mouse_pos = None
+        self._trigger_edge = None
         if self.network_server.client_connection:
             self.network_server.send_message(MSG_SWITCH_OUT)
         logger.info("已切换回本地控制模式")

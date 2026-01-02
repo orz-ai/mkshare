@@ -128,15 +128,22 @@ class MKShareClient:
         elif msg_type == MSG_KEY_UP:
             self._handle_key(payload, False)
         elif msg_type == MSG_SWITCH_IN:
-            self._handle_switch_in()
+            self._handle_switch_in(payload)
         elif msg_type == MSG_SWITCH_OUT:
             self._handle_switch_out()
     
     def _handle_mouse_move(self, payload):
         """处理鼠标移动"""
-        x = payload.get('x', 0)
-        y = payload.get('y', 0)
-        self.input_simulator.move_mouse(x, y)
+        # 如果payload包含dx/dy，则使用相对移动
+        if 'dx' in payload and 'dy' in payload:
+            dx = payload['dx']
+            dy = payload['dy']
+            self.input_simulator.move_mouse_relative(dx, dy)
+        else:
+            # 向后兼容：绝对坐标
+            x = payload.get('x', 0)
+            y = payload.get('y', 0)
+            self.input_simulator.move_mouse(x, y)
     
     def _handle_mouse_button(self, payload, pressed):
         """处理鼠标按键"""
@@ -152,9 +159,15 @@ class MKShareClient:
             else:
                 self.input_simulator.release_key(key)
     
-    def _handle_switch_in(self):
+    def _handle_switch_in(self, payload=None):
         """处理切换到此设备"""
         logger.info("服务器切换控制到此设备")
+        
+        # 根据server的触发边缘，设置鼠标的进入位置
+        if payload and 'edge' in payload:
+            edge = payload['edge']
+            self.input_simulator.set_entry_position(edge, self.screen_manager)
+        
         self.input_simulator.activate()
     
     def _handle_switch_out(self):
