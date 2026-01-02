@@ -23,6 +23,7 @@ class InputCapture:
         }
         self._is_capturing = False
         self._current_pos = (0, 0)
+        self._suppress_input = False  # 是否抑制输入传递到系统
     
     def start(self):
         """开始捕获输入事件"""
@@ -32,18 +33,20 @@ class InputCapture:
         
         self._is_capturing = True
         
-        # 启动鼠标监听
+        # 启动鼠标监听 - 使用suppress参数来拦截事件
         self._mouse_listener = mouse.Listener(
             on_move=self._on_mouse_move,
             on_click=self._on_mouse_click,
-            on_scroll=self._on_mouse_scroll
+            on_scroll=self._on_mouse_scroll,
+            suppress=False  # 初始不拦截
         )
         self._mouse_listener.start()
         
-        # 启动键盘监听
+        # 启动键盘监听 - 使用suppress参数来拦截事件
         self._keyboard_listener = keyboard.Listener(
             on_press=self._on_key_press,
-            on_release=self._on_key_release
+            on_release=self._on_key_release,
+            suppress=False  # 初始不拦截
         )
         self._keyboard_listener.start()
         
@@ -74,7 +77,13 @@ class InputCapture:
     
     def get_current_pos(self):
         """获取当前鼠标位置"""
-        return self._current_pos
+        set_suppress(self, suppress):
+        """
+        设置是否拦截输入事件
+        :param suppress: True=拦截事件不传递给系统, False=正常传递
+        """
+        self._suppress_input = suppress
+        logger.info(f"输入拦截已{'开启' if suppress else '关闭'}")
     
     def _on_mouse_move(self, x, y):
         """鼠标移动事件处理"""
@@ -83,6 +92,10 @@ class InputCapture:
             'type': 'mouse_move',
             'x': x,
             'y': y
+        }
+        self._notify_callbacks('mouse_move', event)
+        # 返回False表示拦截事件，True表示继续传递
+        return not self._suppress_input
         }
         self._notify_callbacks('mouse_move', event)
     
@@ -96,6 +109,8 @@ class InputCapture:
             mouse.Button.right: 2,
             mouse.Button.middle: 3
         }
+        # 返回False表示拦截事件，True表示继续传递
+        return not self._suppress_input
         button_code = button_map.get(button, 1)
         
         event = {
@@ -119,8 +134,8 @@ class InputCapture:
             'type': 'key_press',
             'key': key_info['key'],
             'char': key_info['char']
-        }
-        self._notify_callbacks('key_press', event)
+        # 返回False表示拦截事件，True表示继续传递
+        return not self._suppress_input
     
     def _on_key_release(self, key):
         """键盘抬起事件处理"""
@@ -129,6 +144,10 @@ class InputCapture:
             'type': 'key_release',
             'key': key_info['key'],
             'char': key_info['char']
+        }
+        self._notify_callbacks('key_release', event)
+        # 返回False表示拦截事件，True表示继续传递
+        return not self._suppress_input
         }
         self._notify_callbacks('key_release', event)
     

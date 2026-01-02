@@ -145,12 +145,16 @@ class MKShareServer:
             return
         
         self.is_controlling_local = False
+        # 开启输入拦截，防止输入影响本地系统
+        self.input_capture.set_suppress(True)
         self.network_server.send_message(MSG_SWITCH_IN)
         logger.info("已切换到远程控制模式")
     
     def _switch_to_local(self):
         """切换回本地控制"""
         self.is_controlling_local = True
+        # 关闭输入拦截，恢复本地控制
+        self.input_capture.set_suppress(False)
         if self.network_server.client_connection:
             self.network_server.send_message(MSG_SWITCH_OUT)
         logger.info("已切换回本地控制模式")
