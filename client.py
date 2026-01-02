@@ -138,11 +138,13 @@ class MKShareClient:
         if 'dx' in payload and 'dy' in payload:
             dx = payload['dx']
             dy = payload['dy']
+            logger.debug(f"接收到相对移动: dx={dx}, dy={dy}")
             self.input_simulator.move_mouse_relative(dx, dy)
         else:
             # 向后兼容：绝对坐标
             x = payload.get('x', 0)
             y = payload.get('y', 0)
+            logger.debug(f"接收到绝对坐标: x={x}, y={y}")
             self.input_simulator.move_mouse(x, y)
     
     def _handle_mouse_button(self, payload, pressed):

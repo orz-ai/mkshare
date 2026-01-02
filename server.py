@@ -116,6 +116,7 @@ class MKShareServer:
             if self._last_mouse_pos:
                 dx = x - self._last_mouse_pos[0]
                 dy = y - self._last_mouse_pos[1]
+                logger.debug(f"发送相对移动: dx={dx}, dy={dy}, 当前位置=({x}, {y})")
                 self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
             self._last_mouse_pos = (x, y)
     

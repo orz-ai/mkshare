@@ -53,11 +53,15 @@ class InputSimulator:
         :param dy: Y方向移动量
         """
         if not self._is_active:
+            logger.debug(f"输入模拟未激活，忽略相对移动: dx={dx}, dy={dy}")
             return
         
         try:
             current_x, current_y = self._mouse.position
-            self._mouse.position = (current_x + dx, current_y + dy)
+            new_x = current_x + dx
+            new_y = current_y + dy
+            self._mouse.position = (new_x, new_y)
+            logger.debug(f"相对移动鼠标: ({current_x}, {current_y}) + ({dx}, {dy}) -> ({new_x}, {new_y})")
         except Exception as e:
             logger.error(f"相对移动鼠标失败: {e}")
     
@@ -70,6 +74,7 @@ class InputSimulator:
         try:
             primary_screen = screen_manager.get_primary_screen()
             if not primary_screen:
+                logger.warning("未找到主屏幕")
                 return
             
             # server从某边缘出去，client从相对的边缘进入
@@ -104,8 +109,9 @@ class InputSimulator:
                 x = center_x
                 y = primary_screen['y'] + primary_screen['height'] - 10
             
+            # 直接设置位置，不需要检查_is_active
             self._mouse.position = (x, y)
-            logger.info(f"鼠标从{enter_edge}边缘进入，位置: ({x}, {y})")
+            logger.info(f"设置鼠标进入位置: server从{edge}边出 -> client从{enter_edge}边进入，位置: ({x}, {y})")
             
         except Exception as e:
             logger.error(f"设置进入位置失败: {e}")
