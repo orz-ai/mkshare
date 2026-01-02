@@ -134,6 +134,7 @@ class MKShareServer:
                 dx = event['dx']
                 dy = event['dy']
                 if abs(dx) > 0 or abs(dy) > 0:
+                    logger.info(f"[服务器] 发送鼠标移动: dx={dx}, dy={dy}")
                     self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
             elif self._last_mouse_pos:
                 # 降级方案：自己计算
