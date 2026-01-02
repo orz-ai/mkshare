@@ -183,8 +183,8 @@ class InputCapture:
             self._notify_callbacks('edge_trigger', event)
             return  # 边缘触发时不发送鼠标移动事件
         
-        # 只有在焦点在本机时才发送鼠标移动事件
-        if self._focus:
+        # focus=False时发送到远程，focus=True时不发送（只在本地）
+        if not self._focus:
             event = {
                 'type': 'mouse_move',
                 'x': x,

@@ -119,6 +119,8 @@ class MKShareClient:
         
         if msg_type == MSG_MOUSE_MOVE:
             self._handle_mouse_move(payload)
+        elif msg_type == MSG_MOUSE_ENTER:
+            self._handle_mouse_enter(payload)
         elif msg_type == MSG_MOUSE_CLICK:
             self._handle_mouse_button(payload)
         elif msg_type == MSG_MOUSE_SCROLL:

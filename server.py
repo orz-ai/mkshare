@@ -11,7 +11,7 @@ from core.input_capture import InputCapture
 from core.screen_manager import ScreenManager
 from network.server import NetworkServer
 from network.protocol import (
-    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL,
+    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL, MSG_MOUSE_ENTER,
     MSG_KEY_PRESS, MSG_KEY_RELEASE, MSG_SWITCH_IN, MSG_SWITCH_OUT
 )
 from utils.logger import setup_logger
@@ -175,9 +175,18 @@ class MKShareServer:
             return
         
         self.is_controlling_local = False
-        # 设置focus=False，停止发送本地输入
+        # 设置focus=False，开始捕获并发送输入到远程
         self.input_capture.set_focus(False)
-        # 发送切换消息，包含触发的边缘方向
+        
+        # 发送鼠标进入消息（类似DeviceShare的MOUSE_MOVE_TO）
+        x, y = self._last_mouse_pos
+        self.network_server.send_message(MSG_MOUSE_ENTER, {
+            'x': x,
+            'y': y,
+            'edge': self._trigger_edge
+        })
+        
+        # 发送切换消息
         self.network_server.send_message(MSG_SWITCH_IN, {'edge': self._trigger_edge})
         logger.info("已切换到远程控制模式")
     
