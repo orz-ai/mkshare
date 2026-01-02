@@ -53,13 +53,14 @@ class Protocol:
         else:
             payload_bytes = str(payload).encode('utf-8')
         
-        # 构建包头: magic(2) + version(1) + type(1) + length(4)
+        # 构建包头: magic(2) + version(1) + type(1) + padding(1) + length(4) = 9字节，但对齐到8字节
+        # 实际: magic(2) + version(1) + type(1) + length(4) = 8字节
         header = struct.pack(
-            '!HBBxI',
+            '!HBBI',
             Protocol.MAGIC,           # magic (2 bytes)
             Protocol.VERSION,         # version (1 byte)
             msg_type,                 # type (1 byte)
-            len(payload_bytes)        # length (4 bytes), x是1字节padding
+            len(payload_bytes)        # length (4 bytes)
         )
         
         return header + payload_bytes
@@ -75,7 +76,7 @@ class Protocol:
             return None
         
         try:
-            magic, version, msg_type, padding, length = struct.unpack('!HBBxI', data[:HEADER_SIZE])
+            magic, version, msg_type, length = struct.unpack('!HBBI', data[:HEADER_SIZE])
             
             if magic != Protocol.MAGIC:
                 return None

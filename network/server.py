@@ -132,7 +132,7 @@ class NetworkServer:
                 while len(buffer) >= HEADER_SIZE:
                     header = Protocol.parse_header(buffer[:HEADER_SIZE])
                     if not header:
-                        logger.warning("无效的数据包头")
+                        logger.warning(f"无效的数据包头: {buffer[:HEADER_SIZE].hex()}")
                         buffer = buffer[1:]  # 跳过一个字节
                         continue
                     
