@@ -145,7 +145,7 @@ class NetworkClient:
                 
                 buffer.extend(data)
                 
-                # 解析数据包
+                # 解析数据包（简化协议）
                 while len(buffer) >= HEADER_SIZE:
                     header = Protocol.parse_header(buffer[:HEADER_SIZE])
                     if not header:
@@ -153,18 +153,23 @@ class NetworkClient:
                         buffer = buffer[1:]
                         continue
                     
-                    total_size = HEADER_SIZE + header['length'] + 4  # header + payload + checksum(4)
+                    total_size = HEADER_SIZE + header['length']
                     if len(buffer) < total_size:
                         break
                     
                     packet = buffer[:total_size]
                     buffer = buffer[total_size:]
                     
-                    if not Protocol.verify_checksum(packet):
-                        logger.warning("校验和验证失败")
-                        continue
+                    # 解析payload
+                    payload_data = Protocol.parse_payload(
+                        packet[HEADER_SIZE:], 
+                        header['length']
+                    )
                     
-                    message = Protocol.parse_message(packet, header)
+                    message = {
+                        'type': header['type'],
+                        'payload': payload_data
+                    }
                     self._handle_message(message)
                 
             except socket.timeout:
