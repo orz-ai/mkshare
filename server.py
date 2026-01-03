@@ -85,19 +85,23 @@ class MouseShareServer:
             # 计算相对移动
             dx = x - self.last_pos[0]
             dy = y - self.last_pos[1]
-            self.last_pos = (x, y)
             
             # 发送相对移动到客户端
             if dx != 0 or dy != 0:
                 self.send_to_client(dx, dy, relative=True)
+            
+            # 抑制服务端鼠标：将鼠标固定在边缘位置
+            from pynput.mouse import Controller
+            controller = Controller()
+            fixed_x = self.screen_width - EDGE_THRESHOLD - 1
+            controller.position = (fixed_x, y)
+            self.last_pos = (fixed_x, y)
             
             # 检测是否返回服务端（鼠标向左移动到边缘）
             if at_left_edge and dx < 0:
                 print("返回服务端控制")
                 self.is_controlling_client = False
                 # 将鼠标移到服务端右侧
-                from pynput.mouse import Controller
-                controller = Controller()
                 controller.position = (self.screen_width - EDGE_THRESHOLD - 100, y)
     
     def send_to_client(self, x, y, relative=False):
