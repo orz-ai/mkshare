@@ -111,28 +111,29 @@ def on_mouse_move(x, y):
     """鼠标移动事件"""
     global active_client_id, screen_manager, network_server
     
-    # 检查边缘触发
-    should_switch, target_device, edge = screen_manager.check_edge_trigger(x, y)
-    
-    if should_switch and target_device:
-        logger.info(f"Switching to device: {target_device.device_name} (edge: {edge})")
+    # 如果没有活动客户端，检查边缘触发
+    if not active_client_id:
+        should_switch, target_device, edge = screen_manager.check_edge_trigger(x, y)
         
-        # 发送切换消息
-        switch_msg = create_switch_message(
-            MessageType.MSG_SWITCH_IN,
-            reason='edge',
-            edge=edge,
-            cursor_pos={'x': x, 'y': y}
-        )
-        network_server.send_to_client(target_device.device_id, switch_msg['type'], switch_msg['payload'])
-        
-        # 设置活动客户端
-        active_client_id = target_device.device_id
-        network_server.set_active_client(active_client_id)
-        
-        # 抑制本地输入
-        input_capture.suppress(True)
-        return
+        if should_switch and target_device:
+            logger.info(f"Switching to device: {target_device.device_name} (edge: {edge})")
+            
+            # 发送切换消息
+            switch_msg = create_switch_message(
+                MessageType.MSG_SWITCH_IN,
+                reason='edge',
+                edge=edge,
+                cursor_pos={'x': x, 'y': y}
+            )
+            network_server.send_to_client(target_device.device_id, switch_msg['type'], switch_msg['payload'])
+            
+            # 设置活动客户端
+            active_client_id = target_device.device_id
+            network_server.set_active_client(active_client_id)
+            
+            # 抑制本地输入
+            input_capture.suppress(True)
+            # 继续发送鼠标移动事件
     
     # 如果有活动客户端，发送鼠标移动事件
     if active_client_id:
