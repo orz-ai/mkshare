@@ -69,7 +69,7 @@ class InputCapture:
             on_move=self._handle_mouse_move,
             on_click=self._handle_mouse_click,
             on_scroll=self._handle_mouse_scroll,
-            suppress=False  # 不全局抑制，由回调决定
+            suppress=True  # 启用抑制，由回调返回值决定是否抑制
         )
         self._mouse_listener.start()
         
@@ -77,7 +77,7 @@ class InputCapture:
         self._keyboard_listener = keyboard.Listener(
             on_press=self._handle_key_press,
             on_release=self._handle_key_release,
-            suppress=False  # 不全局抑制，由回调决定
+            suppress=True  # 启用抑制，由回调返回值决定是否抑制
         )
         self._keyboard_listener.start()
         
