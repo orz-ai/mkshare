@@ -208,17 +208,10 @@ class MKShareClient:
                 'y': y,
                 'button': button_name,
                 'pressed': pressed
-            }), x, y):
-        """进入共享模式"""
-        self.sharing_mode = True
-        # 设置鼠标锁定位置（屏幕中心）
-        self.lock_position = (self.screen_width // 2, self.screen_height // 2)
-        self.last_mouse_pos = self.lock_position
-        # 立即将鼠标移动到锁定位置
-        self.is_resetting_mouse = True
-        self.mouse_controller.position = self.lock_position
-        self.is_resetting_mouse = False
-        self.logger.info(f"进入共享模式，鼠标锁定在 {self.lock_position}self.edge_threshold:
+            })
+            
+            # 检测退出共享模式（可以通过特定按键或边缘检测）
+            if pressed and x <= self.edge_threshold:
                 self.logger.info("检测到左边缘，退出共享模式")
                 self._exit_sharing_mode()
     
@@ -233,11 +226,24 @@ class MKShareClient:
                 'dy': dy
             })
     
-    def _enter_sharing_mode(self):
+    def _enter_sharing_mode(self, x, y):
         """进入共享模式"""
-        self.shck_position = None
+        self.sharing_mode = True
+        # 设置鼠标锁定位置（屏幕中心）
+        self.lock_position = (self.screen_width // 2, self.screen_height // 2)
+        self.last_mouse_pos = self.lock_position
+        # 立即将鼠标移动到锁定位置
+        self.is_resetting_mouse = True
+        self.mouse_controller.position = self.lock_position
+        self.is_resetting_mouse = False
+        self.logger.info(f"进入共享模式，鼠标锁定在 {self.lock_position}")
+        # 可以添加视觉提示或声音提示
+    
+    def _exit_sharing_mode(self):
+        """退出共享模式"""
+        self.sharing_mode = False
+        self.lock_position = None
         self.last_mouse_pos = None
-        self.loaring_mode = True
         self.logger.info("进入共享模式")
         # 可以添加视觉提示或声音提示
     
