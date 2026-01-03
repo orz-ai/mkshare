@@ -77,7 +77,7 @@ class Protocol:
     
     MAGIC = 0x4D  # 'M'
     VERSION = 0x01
-    HEADER_SIZE = 24  # 包头大小（字节）
+    HEADER_SIZE = 20  # 包头大小（字节）: BBBB(4) + I(4) + I(4) + Q(8) = 20
     
     def __init__(self):
         self._sequence = 0
@@ -107,9 +107,9 @@ class Protocol:
         timestamp = int(time.time() * 1000)
         
         # 构建包头
-        # 格式: BBBBI Q (magic, version, type, flags, length, sequence, timestamp)
+        # 格式: BBBBI I Q (magic, version, type, flags, length, sequence, timestamp)
         header = struct.pack(
-            '!BBBBIQ',
+            '!BBBBIIQ',
             self.MAGIC,
             self.VERSION,
             msg_type,
@@ -144,7 +144,7 @@ class Protocol:
         try:
             # 解析包头
             magic, version, msg_type, flags, payload_len, sequence, timestamp = struct.unpack(
-                '!BBBBIQQ',
+                '!BBBBIIQ',
                 data[:self.HEADER_SIZE]
             )
             
@@ -205,7 +205,7 @@ class Protocol:
         try:
             # 解析payload长度
             _, _, _, _, payload_len, _, _ = struct.unpack(
-                '!BBBBIQQ',
+                '!BBBBIIQ',
                 header_data[:self.HEADER_SIZE]
             )
             
