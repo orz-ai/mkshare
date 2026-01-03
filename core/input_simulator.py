@@ -260,7 +260,6 @@ class InputSimulator:
             0x10: Key.shift,
             0x11: Key.ctrl,
             0x12: Key.alt,
-            0x13: Key.pause,
             0x14: Key.caps_lock,
             0x1B: Key.esc,
             0x20: Key.space,
@@ -293,10 +292,6 @@ class InputSimulator:
             0x7A: Key.f11,
             0x7B: Key.f12,
             
-            # 数字键盘
-            0x90: Key.num_lock,
-            0x91: Key.scroll_lock,
-            
             # 修饰键
             0xA0: Key.shift_l,
             0xA1: Key.shift_r,
@@ -305,5 +300,22 @@ class InputSimulator:
             0xA4: Key.alt_l,
             0xA5: Key.alt_r,
         }
+        
+        # 添加平台特定的键（如果存在）
+        # Windows/Linux 特有的键
+        try:
+            key_map[0x13] = Key.pause
+        except AttributeError:
+            pass  # macOS 没有 pause 键
+        
+        try:
+            key_map[0x90] = Key.num_lock
+        except AttributeError:
+            pass  # 某些平台可能没有
+        
+        try:
+            key_map[0x91] = Key.scroll_lock
+        except AttributeError:
+            pass  # macOS 没有 scroll_lock 键
         
         return key_map
