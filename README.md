@@ -52,6 +52,153 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## 快速开始
+
+### 服务端（主控设备）
+
+1. 编辑 `config.yaml` 配置文件，确认网络设置
+
+2. 运行服务端：
+
+```bash
+python server.py
+```
+
+服务端将监听 41234 端口，等待客户端连接。
+
+### 客户端（被控设备）
+
+1. 编辑 `config.yaml` 配置文件，设置服务器IP地址：
+
+```yaml
+network:
+  client:
+    server_host: 192.168.1.100  # 修改为服务器的实际IP地址
+    server_port: 41234
+```
+
+2. 运行客户端：
+
+```bash
+python client.py
+```
+
+客户端将自动连接到服务器。
+
+### 使用方法
+
+1. 在服务端（主控设备）上正常使用鼠标键盘
+2. 将鼠标移动到屏幕边缘（默认右边缘），并停留0.3秒
+3. 鼠标将自动切换到客户端设备，可以控制客户端设备
+4. 要切换回来，将鼠标移回屏幕边缘即可
+
+## 配置说明
+
+主要配置项在 `config.yaml` 中：
+
+- `network.server.host`: 服务端监听地址（0.0.0.0表示所有网卡）
+- `network.server.port`: 服务端端口（默认41234）
+- `network.client.server_host`: 客户端连接的服务器地址
+- `screen_switch.edge_threshold`: 边缘触发阈值（像素）
+- `screen_switch.edge_delay`: 边缘停留延迟（秒）
+- `input.mouse.sensitivity`: 鼠标灵敏度
+- `logging.level`: 日志级别（DEBUG/INFO/WARNING/ERROR）
+
+## 项目结构
+
+```
+mkshare/
+├── mkshare/              # 主程序包
+│   ├── core/            # 核心功能模块
+│   │   ├── input_capture.py    # 输入捕获
+│   │   ├── input_simulator.py  # 输入模拟
+│   │   └── screen_manager.py   # 屏幕管理
+│   ├── network/         # 网络通信模块
+│   │   ├── protocol.py         # 通信协议
+│   │   ├── server.py           # 服务端网络
+│   │   └── client.py           # 客户端网络
+│   ├── config/          # 配置管理
+│   │   └── settings.py         # 配置加载
+│   └── utils/           # 工具模块
+│       ├── logger.py           # 日志工具
+│       └── validators.py       # 验证工具
+├── server.py            # 服务端启动脚本
+├── client.py            # 客户端启动脚本
+├── config.yaml          # 配置文件
+└── requirements.txt     # 依赖包列表
+```
+
+## 注意事项
+
+### Windows
+
+- 建议以管理员身份运行，以确保输入模拟正常工作
+- 某些安全软件可能会拦截输入模拟，需要添加信任
+
+### macOS
+
+- 需要在"系统偏好设置 -> 安全性与隐私 -> 隐私 -> 辅助功能"中授权
+- 首次运行会提示授权请求
+
+### Linux
+
+- 确保用户在 `input` 组中：`sudo usermod -a -G input $USER`
+- 或者以 root 权限运行
+
+## 故障排除
+
+### 客户端无法连接
+
+1. 检查服务器IP地址是否正确
+2. 确认防火墙允许 41234 端口
+3. 确认两台设备在同一局域网内
+4. 检查日志文件 `logs/mkshare.log`
+
+### 鼠标键盘不响应
+
+1. 检查是否有权限警告
+2. 尝试以管理员/root权限运行
+3. 检查安全软件是否拦截
+
+### 边缘切换不灵敏
+
+1. 调整 `config.yaml` 中的 `edge_threshold` 和 `edge_delay`
+2. 增大阈值可以更容易触发
+3. 减小延迟可以更快切换
+
+## 开发计划
+
+- [x] 基础输入捕获和模拟
+- [x] TCP网络通信
+- [x] 屏幕边缘检测和切换
+- [x] 跨平台支持（Windows优先）
+- [ ] 剪贴板同步
+- [ ] UDP设备发现
+- [ ] 图形界面
+- [ ] 多客户端支持优化
+- [ ] 加密通信
+
+## 贡献
+
+欢迎提交Issue和Pull Request！
+
+## 许可证
+
+MIT License
+
+## 致谢
+
+本项目受 Synergy、Barrier 等优秀项目启发。
+
+---
+
+**版本**: 1.0.0  
+**更新日期**: 2026-01-03
+
+```bash
+pip install -r requirements.txt
+```
+
 ## 配置
 
 编辑 `config.yaml` 文件：
