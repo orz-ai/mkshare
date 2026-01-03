@@ -1,329 +1,132 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
-MKShare Client
-客户端主程序 - 接收服务器输入事件并模拟执行
+MKShare Client - 鼠标共享客户端
+接收服务端的鼠标控制命令并控制本地鼠标
 """
-
-import sys
+import socket
+import json
 import time
-import logging
-import platform
+from pynput import mouse
+from pynput.mouse import Controller, Listener
+from screeninfo import get_monitors
+import yaml
 
-from config.settings import Settings
-from core.input_simulator import InputSimulator
-from core.screen_manager import ScreenManager
-from network.client import NetworkClient
-from network.protocol import MessageType
-from utils.logger import get_logger
+# 加载配置
+with open('config.yaml', 'r', encoding='utf-8') as f:
+    config = yaml.safe_load(f)
 
 # 全局变量
-config = None
-logger = None
-screen_manager = None
-input_simulator = None
-network_client = None
-reconnect_enabled = True
+mouse_controller = Controller()
+active = False  # True=client控制, False=等待激活
+screen_width = 0
+screen_height = 0
+sock = None
 
+# 获取屏幕尺寸
+for monitor in get_monitors():
+    if monitor.is_primary:
+        screen_width = monitor.width
+        screen_height = monitor.height
+        break
 
-def init():
-    """初始化系统"""
-    global config, logger, screen_manager, input_simulator, network_client
-    
-    # 加载配置
-    config = Settings('config.yaml')
-    
-    # 初始化日志
-    log_level = getattr(logging, config.log_level.upper(), logging.INFO)
-    logger = get_logger('mkshare.client', log_level, config.log_file)
-    
-    logger.info("=" * 60)
-    logger.info("MKShare Client Starting...")
-    logger.info("=" * 60)
-    
-    # 初始化屏幕管理器
-    screen_manager = ScreenManager()
-    local_device = screen_manager.initialize_local_device()
-    logger.info(f"Local device: {local_device.device_name}")
-    logger.info(f"OS: {platform.system()} {platform.release()}")
-    logger.info(f"Screens: {len(local_device.screens)}")
-    for screen in local_device.screens:
-        logger.info(f"  - Screen {screen.index}: {screen.width}x{screen.height} at ({screen.x}, {screen.y})")
-    
-    # 初始化输入模拟器
-    input_simulator = InputSimulator()
-    
-    # 初始化网络客户端
-    network_client = NetworkClient()
-    network_client.on_connected = on_connected
-    network_client.on_disconnected = on_disconnected
-    network_client.on_message_received = on_message_received
+edge_threshold = config['screen_switch']['edge_threshold']
 
+def on_move(x, y):
+    """鼠标移动事件处理"""
+    global active
+    
+    if active:
+        # 检查是否到达左边缘
+        if x <= edge_threshold:
+            print(f"鼠标到达左边缘，归还控制权给服务端")
+            active = False
+            # 通知服务端
+            try:
+                message = json.dumps({
+                    'type': 'deactivate',
+                    'y': y / screen_height  # 归一化 y 坐标
+                }) + '\n'
+                sock.sendall(message.encode('utf-8'))
+            except:
+                pass
+            return False  # 抑制此次移动
+    else:
+        # 未激活，抑制所有鼠标移动
+        return False
 
 def connect_to_server():
     """连接到服务器"""
-    global config, network_client, screen_manager
+    global sock
     
-    server_host = config.client_server_host
-    server_port = config.client_server_port
+    server_host = config['network']['client']['server_host']
+    server_port = config['network']['client']['server_port']
     
-    logger.info(f"Connecting to server {server_host}:{server_port}...")
-    
-    # 准备设备信息
-    local_device = screen_manager.local_device
-    device_info = {
-        'device_id': local_device.device_id,
-        'device_name': local_device.device_name,
-        'os_type': local_device.os_type,
-        'os_version': platform.release(),
-        'screen_count': len(local_device.screens),
-        'screens': [
-            {
-                'index': s.index,
-                'width': s.width,
-                'height': s.height,
-                'x': s.x,
-                'y': s.y,
-                'is_primary': s.is_primary
-            } for s in local_device.screens
-        ],
-        'protocol_version': '1.0',
-        'features': ['mouse', 'keyboard']
-    }
-    
-    # 连接服务器
-    return network_client.connect(server_host, server_port, device_info)
+    while True:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((server_host, server_port))
+            print(f"已连接到服务器: {server_host}:{server_port}")
+            return sock
+        except Exception as e:
+            print(f"连接失败: {e}，5秒后重试...")
+            time.sleep(5)
 
-
-def start():
-    """启动客户端"""
-    global reconnect_enabled
+def handle_server_messages():
+    """处理服务器消息"""
+    global active, sock
     
-    # 连接服务器
-    if not connect_to_server():
-        logger.error("Failed to connect to server")
-        
-        # 如果启用自动重连
-        if config.auto_reconnect:
-            reconnect_enabled = True
-            logger.info("Auto-reconnect enabled")
-        else:
-            return False
-    
-    logger.info("Client is running. Press Ctrl+C to stop.")
-    return True
-
-
-def stop():
-    """停止客户端"""
-    global network_client, input_simulator, reconnect_enabled
-    
-    logger.info("Stopping client...")
-    
-    reconnect_enabled = False
-    
-    if input_simulator:
-        input_simulator.deactivate()
-    
-    if network_client:
-        network_client.disconnect()
-    
-    logger.info("Client stopped")
-
-
-# ===== 网络事件处理 =====
-
-def on_connected():
-    """连接成功"""
-    logger.info("Successfully connected to server")
-
-
-def on_disconnected():
-    """连接断开"""
-    global reconnect_enabled, config, network_client, screen_manager, input_simulator
-    
-    logger.warning("Disconnected from server")
-    
-    # 停用输入模拟
-    if input_simulator:
-        input_simulator.deactivate()
-    
-    # 自动重连
-    if reconnect_enabled and config.auto_reconnect:
-        logger.info(f"Reconnecting in {config.reconnect_interval} seconds...")
-        time.sleep(config.reconnect_interval)
-        
-        local_device = screen_manager.local_device
-        device_info = {
-            'device_id': local_device.device_id,
-            'device_name': local_device.device_name,
-            'os_type': local_device.os_type,
-            'screens': []
-        }
-        
-        network_client.reconnect(device_info)
-
-
-def on_message_received(message):
-    """接收到服务器消息"""
-    msg_type = message['type']
-    payload = message['payload']
-    
-    # 处理切换命令
-    if msg_type == MessageType.MSG_SWITCH_IN:
-        handle_switch_in(payload)
-    
-    elif msg_type == MessageType.MSG_SWITCH_OUT:
-        handle_switch_out(payload)
-    
-    # 处理鼠标事件
-    elif msg_type == MessageType.MSG_MOUSE_MOVE:
-        handle_mouse_move(payload)
-    
-    elif msg_type == MessageType.MSG_MOUSE_DOWN:
-        handle_mouse_button(payload, pressed=True)
-    
-    elif msg_type == MessageType.MSG_MOUSE_UP:
-        handle_mouse_button(payload, pressed=False)
-    
-    elif msg_type == MessageType.MSG_MOUSE_WHEEL:
-        handle_mouse_wheel(payload)
-    
-    # 处理键盘事件
-    elif msg_type == MessageType.MSG_KEY_DOWN:
-        handle_key_press(payload)
-    
-    elif msg_type == MessageType.MSG_KEY_UP:
-        handle_key_release(payload)
-
-
-# ===== 消息处理函数 =====
-
-def handle_switch_in(payload):
-    """处理切换进入"""
-    global input_simulator
-    
-    reason = payload.get('reason', 'unknown')
-    edge = payload.get('edge', '')
-    cursor_pos = payload.get('cursor_pos', {})
-    
-    logger.info(f"Switched in (reason: {reason}, edge: {edge}, cursor: {cursor_pos})")
-    
-    # 激活输入模拟
-    input_simulator.activate()
-    logger.info(f"Simulator active: {input_simulator.is_active()}")
-
-
-def handle_switch_out(payload):
-    """处理切换离开"""
-    global input_simulator
-    
-    logger.info("Switched out")
-    
-    # 停用输入模拟
-    input_simulator.deactivate()
-
-
-def handle_mouse_move(payload):
-    """处理鼠标移动"""
-    global input_simulator
-    
-    x = payload.get('x', 0)
-    y = payload.get('y', 0)
-    relative = payload.get('relative', False)
-    
-    if relative:
-        dx = payload.get('dx', 0)
-        dy = payload.get('dy', 0)
-        logger.debug(f"Mouse move relative: dx={dx}, dy={dy}")
-        input_simulator.move_mouse_relative(dx, dy)
-    else:
-        logger.debug(f"Mouse move absolute: x={x}, y={y}")
-        input_simulator.move_mouse(x, y)
-
-
-def handle_mouse_button(payload, pressed: bool):
-    """处理鼠标按键"""
-    global input_simulator
-    
-    button = payload.get('button', 1)
-    
-    if pressed:
-        input_simulator.press_mouse_button(button)
-    else:
-        input_simulator.release_mouse_button(button)
-
-
-def handle_mouse_wheel(payload):
-    """处理鼠标滚轮"""
-    global input_simulator
-    
-    delta_x = payload.get('delta_x', 0)
-    delta_y = payload.get('delta_y', 0)
-    
-    input_simulator.scroll_mouse(delta_x, delta_y)
-
-
-def handle_key_press(payload):
-    """处理键盘按下"""
-    global input_simulator
-    
-    key_code = payload.get('key_code', 0)
-    char = payload.get('char', '')
-    
-    input_simulator.press_key(key_code, char)
-
-
-def handle_key_release(payload):
-    """处理键盘抬起"""
-    global input_simulator
-    
-    key_code = payload.get('key_code', 0)
-    char = payload.get('char', '')
-    
-    input_simulator.release_key(key_code, char)
-
-
-def main():
-    """主函数"""
-    global logger
-    
-    try:
-        # 初始化
-        init()
-        
-        # 启动
-        if not start():
-            if logger:
-                logger.error("Failed to start client")
-            else:
-                print("Failed to start client")
-            sys.exit(1)
-        
-        # 主循环
-        while True:
-            time.sleep(1)
+    buffer = ""
+    while True:
+        try:
+            data = sock.recv(1024).decode('utf-8')
+            if not data:
+                print("服务器断开连接，尝试重连...")
+                sock = connect_to_server()
+                buffer = ""
+                continue
             
-            # 定期发送心跳
-            if network_client and network_client.is_connected():
-                network_client.send_ping()
-    
-    except KeyboardInterrupt:
-        if logger:
-            logger.info("\nReceived interrupt signal")
-        else:
-            print("\nReceived interrupt signal")
-    except Exception as e:
-        if logger:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
-        else:
-            print(f"Unexpected error: {e}")
-            import traceback
-            traceback.print_exc()
-    finally:
-        stop()
+            buffer += data
+            while '\n' in buffer:
+                line, buffer = buffer.split('\n', 1)
+                try:
+                    message = json.loads(line)
+                    
+                    # 服务端激活客户端控制
+                    if message['type'] == 'activate':
+                        print(f"接收控制权，鼠标从左边缘进入")
+                        active = True
+                        y = int(message['y'] * screen_height)
+                        # 将鼠标移到左边缘
+                        mouse_controller.position = (edge_threshold + 1, y)
+                
+                except json.JSONDecodeError:
+                    pass
+        except Exception as e:
+            print(f"通信错误: {e}，尝试重连...")
+            time.sleep(1)
+            sock = connect_to_server()
+            buffer = ""
 
+def start_mouse_listener():
+    """启动鼠标监听"""
+    with Listener(on_move=on_move) as listener:
+        listener.join()
 
 if __name__ == '__main__':
-    main()
+    import threading
+    
+    print(f"屏幕尺寸: {screen_width}x{screen_height}")
+    print(f"边缘阈值: {edge_threshold} 像素")
+    
+    # 连接到服务器
+    sock = connect_to_server()
+    
+    # 启动消息处理线程
+    msg_thread = threading.Thread(target=handle_server_messages)
+    msg_thread.daemon = True
+    msg_thread.start()
+    
+    # 启动鼠标监听（主线程）
+    print("\n鼠标共享客户端运行中...")
+    print("等待服务端发送控制命令...\n")
+    start_mouse_listener()
 
