@@ -5,25 +5,19 @@ MKShare Client - 鼠标键盘共享客户端
 """
 
 import socket
+import threading
 import json
 import logging
 import yaml
 import sys
 import time
 from pathlib import Path
-from pynput import mouse
-from screeninfo import get_monitors
+from pynput.mouse import Controller as MouseController, Button
 import colorlog
-import platform
-
-# Windows API
-if platform.system() == 'Windows':
-    import ctypes
-    import ctypes.wintypes
 
 
 class MKShareClient:
-    """MKShare 客户端"""
+    """客户端 - 接收服务端控制"""
     
     def __init__(self, config_path='config.yaml'):
         self.config = self._load_config(config_path)
@@ -33,29 +27,13 @@ class MKShareClient:
         self.server_host = self.config['network']['client']['server_host']
         self.server_port = self.config['network']['client']['server_port']
         
-        # 屏幕信息
-        self.monitors = get_monitors()
-        if not self.monitors:
-            self.logger.error("未检测到屏幕")
-            sys.exit(1)
-        
-        self.screen = self.monitors[0]
-        self.screen_width = self.screen.width
-        self.screen_height = self.screen.height
-        self.edge_threshold = self.config['screen_switch']['edge_threshold']
-        
-        self.logger.info(f"屏幕尺寸: {self.screen_width}x{self.screen_height}")
+        # 鼠标控制器
+        self.mouse = MouseController()
         
         # 客户端状态
         self.socket = None
         self.running = False
         self.connected = False
-        self.sharing_mode = False
-        
-        # 鼠标状态
-        self.mouse_listener = None
-        self.last_mouse_pos = None
-        self.clip_rect = None
         
         self.logger.info("MKShare Client 初始化完成")
     
@@ -114,8 +92,9 @@ class MKShareClient:
             self.logger.error("无法连接到服务器")
             return
         
-        # 启动鼠标监听
-        self._start_mouse_listener()
+        # 启动接收线程
+        recv_thread = threading.Thread(target=self._receive_messages, daemon=True)
+        recv_thread.start()
         
         # 主线程等待
         try:
@@ -138,122 +117,95 @@ class MKShareClient:
             self.connected = False
             return False
     
-    def _start_mouse_listener(self):
-        """启动鼠标监听"""
-        self.mouse_listener = mouse.Listener(
-            on_move=self._on_mouse_move,
-            on_click=self._on_mouse_click,
-            on_scroll=self._on_mouse_scroll
-        )
-        self.mouse_listener.start()
-        self.logger.info("鼠标监听已启动")
-    
-    def _on_mouse_move(self, x, y):
-        """鼠标移动事件"""
-        if not self.sharing_mode:
-            # 检测右边缘
-            if x >= self.screen_width - self.edge_threshold:
-                self.logger.info("检测到右边缘，进入共享模式")
-                self._enter_sharing_mode()
-        else:
-            # 共享模式：计算增量并发送
-            if self.last_mouse_pos:
-                dx = x - self.last_mouse_pos[0]
-                dy = y - self.last_mouse_pos[1]
-                
-                if dx != 0 or dy != 0:
-                    self._send_message({
-                        'type': 'mouse_move',
-                        'dx': dx,
-                        'dy': dy
-                    })
-            
-            self.last_mouse_pos = (x, y)
-    
-    def _on_mouse_click(self, x, y, button, pressed):
-        """鼠标点击事件"""
-        if self.sharing_mode:
-            # 检测退出（在限制区域左边缘点击）
-            if self.clip_rect and x <= self.clip_rect[0] + 2:
-                self.logger.info("检测到退出信号")
-                self._exit_sharing_mode()
-                return
-            
-            # 发送点击事件
-            button_name = button.name if hasattr(button, 'name') else str(button)
-            self._send_message({
-                'type': 'mouse_click',
-                'button': button_name,
-                'pressed': pressed
-            })
-    
-    def _on_mouse_scroll(self, x, y, dx, dy):
-        """鼠标滚轮事件"""
-        if self.sharing_mode:
-            self._send_message({
-                'type': 'mouse_scroll',
-                'dx': dx,
-                'dy': dy
-            })
-    
-    def _enter_sharing_mode(self):
-        """进入共享模式"""
-        self.sharing_mode = True
-        
-        if platform.system() == 'Windows':
-            # 获取当前鼠标位置
-            point = ctypes.wintypes.POINT()
-            ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-            x, y = point.x, point.y
-            self.last_mouse_pos = (x, y)
-            
-            # 限制在 100x100 像素区域
-            left = x - 50
-            top = y - 50
-            right = x + 50
-            bottom = y + 50
-            
-            # ClipCursor
-            rect = ctypes.wintypes.RECT(left, top, right, bottom)
-            ctypes.windll.user32.ClipCursor(ctypes.byref(rect))
-            self.clip_rect = (left, top, right, bottom)
-            
-            self.logger.info(f"进入共享模式，鼠标限制在 ({left},{top},{right},{bottom})")
-        else:
-            self.logger.warning("仅支持 Windows 系统")
-    
-    def _exit_sharing_mode(self):
-        """退出共享模式"""
-        self.sharing_mode = False
-        self.last_mouse_pos = None
-        self.clip_rect = None
-        
-        if platform.system() == 'Windows':
-            ctypes.windll.user32.ClipCursor(None)
-            self.logger.info("退出共享模式")
-    
-    def _send_message(self, message):
-        """发送消息"""
-        if not self.connected:
-            return
-        
+    def _receive_messages(self):
+        """接收服务端消息"""
+        buffer = ""
         try:
-            data = json.dumps(message) + '\n'
-            self.socket.sendall(data.encode('utf-8'))
+            while self.running and self.connected:
+                data = self.socket.recv(8192).decode('utf-8')
+                if not data:
+                    break
+                
+                buffer += data
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    if line.strip():
+                        self._process_message(line.strip())
+                        
         except Exception as e:
-            self.logger.error(f"发送失败: {e}")
+            self.logger.error(f"接收消息失败: {e}")
             self.connected = False
+    
+    def _process_message(self, message):
+        """处理消息"""
+        try:
+            msg = json.loads(message)
+            msg_type = msg.get('type')
+            
+            if msg_type == 'mouse_move':
+                self._handle_mouse_move(msg)
+            elif msg_type == 'mouse_click':
+                self._handle_mouse_click(msg)
+            elif msg_type == 'mouse_scroll':
+                self._handle_mouse_scroll(msg)
+            else:
+                self.logger.warning(f"未知消息: {msg_type}")
+                
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON解析失败: {e}")
+        except Exception as e:
+            self.logger.error(f"处理消息失败: {e}")
+    
+    def _handle_mouse_move(self, msg):
+        """处理鼠标移动"""
+        try:
+            dx = msg['dx']
+            dy = msg['dy']
+            current_x, current_y = self.mouse.position
+            new_x = current_x + dx
+            new_y = current_y + dy
+            self.mouse.position = (new_x, new_y)
+            self.logger.debug(f"鼠标移动: dx={dx}, dy={dy}")
+        except Exception as e:
+            self.logger.error(f"鼠标移动失败: {e}")
+    
+    def _handle_mouse_click(self, msg):
+        """处理鼠标点击"""
+        try:
+            button_name = msg['button']
+            pressed = msg['pressed']
+            
+            button_map = {
+                'left': Button.left,
+                'right': Button.right,
+                'middle': Button.middle
+            }
+            button = button_map.get(button_name, Button.left)
+            
+            if pressed:
+                self.mouse.press(button)
+                self.logger.debug(f"鼠标按下: {button_name}")
+            else:
+                self.mouse.release(button)
+                self.logger.debug(f"鼠标释放: {button_name}")
+                
+        except Exception as e:
+            self.logger.error(f"鼠标点击失败: {e}")
+    
+    def _handle_mouse_scroll(self, msg):
+        """处理鼠标滚轮"""
+        try:
+            dx = msg['dx']
+            dy = msg['dy']
+            self.mouse.scroll(dx, dy)
+            self.logger.debug(f"鼠标滚动: dx={dx}, dy={dy}")
+        except Exception as e:
+            self.logger.error(f"鼠标滚动失败: {e}")
     
     def stop(self):
         """停止客户端"""
         self.logger.info("停止客户端...")
         self.running = False
-        
-        if self.sharing_mode:
-            self._exit_sharing_mode()
-        
-        if self.mouse_listener:
-            self.mouse_listener.stop()
         
         if self.socket:
             try:
