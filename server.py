@@ -26,6 +26,7 @@ screen_manager = None
 input_capture = None
 network_server = None
 active_client_id = None
+last_mouse_pos = None  # 记录上次鼠标位置，用于计算相对移动
 
 
 def init():
@@ -109,7 +110,7 @@ def stop():
 
 def on_mouse_move(x, y):
     """鼠标移动事件"""
-    global active_client_id, screen_manager, network_server
+    global active_client_id, screen_manager, network_server, last_mouse_pos
     
     # 如果没有活动客户端，检查边缘触发
     if not active_client_id:
@@ -118,12 +119,15 @@ def on_mouse_move(x, y):
         if should_switch and target_device:
             logger.info(f"Switching to device: {target_device.device_name} (edge: {edge})")
             
+            # 计算客户端的初始坐标（根据边缘位置）
+            target_x, target_y = convert_coordinates_on_switch(x, y, edge, screen_manager.local_device, target_device)
+            
             # 发送切换消息
             switch_msg = create_switch_message(
                 MessageType.MSG_SWITCH_IN,
                 reason='edge',
                 edge=edge,
-                cursor_pos={'x': x, 'y': y}
+                cursor_pos={'x': target_x, 'y': target_y}
             )
             network_server.send_to_client(target_device.device_id, switch_msg['type'], switch_msg['payload'])
             
@@ -133,12 +137,77 @@ def on_mouse_move(x, y):
             
             # 抑制本地输入
             input_capture.suppress(True)
-            # 继续发送鼠标移动事件
+            
+            # 立即发送初始位置（绝对坐标）
+            msg = create_mouse_move_message(target_x, target_y, relative=False)
+            network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
+            
+            # 记录当前位置
+            last_mouse_pos = (x, y)
+            return
     
-    # 如果有活动客户端，发送鼠标移动事件
+    # 如果有活动客户端，使用相对移动
     if active_client_id:
-        msg = create_mouse_move_message(x, y)
-        network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
+        if last_mouse_pos:
+            dx = x - last_mouse_pos[0]
+            dy = y - last_mouse_pos[1]
+            
+            # 发送相对移动
+            msg = create_mouse_move_message(0, 0, relative=True, dx=dx, dy=dy)
+            network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
+        else:
+            # 没有上次位置，发送绝对坐标
+            msg = create_mouse_move_message(x, y, relative=False)
+            network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
+        
+        # 更新上次位置
+        last_mouse_pos = (x, y)
+
+
+def convert_coordinates_on_switch(x, y, edge, local_device, remote_device):
+    """
+    切换时转换坐标
+    
+    Args:
+        x, y: 本地坐标
+        edge: 切换边缘 (left/right/top/bottom)
+        local_device: 本地设备
+        remote_device: 远程设备
+    
+    Returns:
+        (target_x, target_y): 目标设备上的坐标
+    """
+    # 获取本地主屏幕
+    local_screen = local_device.screens[0] if local_device.screens else None
+    if not local_screen:
+        return (0, 0)
+    
+    # 简化处理：假设远程设备也只有一个屏幕，尺寸从客户端信息获取
+    # 目前remote_device.screens为空，先用默认值
+    remote_width = 1920  # TODO: 从客户端注册信息获取
+    remote_height = 1080
+    
+    if edge == 'right':
+        # 从右边缘切换，鼠标应出现在客户端左边缘
+        target_x = 0
+        target_y = int(y * remote_height / local_screen.height)  # 按比例缩放Y坐标
+    elif edge == 'left':
+        # 从左边缘切换，鼠标应出现在客户端右边缘
+        target_x = remote_width - 1
+        target_y = int(y * remote_height / local_screen.height)
+    elif edge == 'bottom':
+        # 从下边缘切换，鼠标应出现在客户端上边缘
+        target_x = int(x * remote_width / local_screen.width)
+        target_y = 0
+    elif edge == 'top':
+        # 从上边缘切换，鼠标应出现在客户端下边缘
+        target_x = int(x * remote_width / local_screen.width)
+        target_y = remote_height - 1
+    else:
+        target_x, target_y = 0, 0
+    
+    logger.debug(f"Coordinate conversion: ({x}, {y}) on {edge} -> ({target_x}, {target_y})")
+    return (target_x, target_y)
 
 
 def on_mouse_click(x, y, button, pressed):
@@ -209,7 +278,7 @@ def on_client_connected(client, device_info):
 
 def on_client_disconnected(client):
     """客户端断开"""
-    global active_client_id, input_capture
+    global active_client_id, input_capture, last_mouse_pos
     
     if client.device_info:
         device_id = client.device_info.get('device_id')
@@ -219,6 +288,7 @@ def on_client_disconnected(client):
         # 如果是活动客户端断开，恢复本地输入
         if device_id == active_client_id:
             active_client_id = None
+            last_mouse_pos = None
             input_capture.suppress(False)
 
 
