@@ -34,24 +34,21 @@ def on_move(x, y):
     """鼠标移动事件处理"""
     global active
     
-    # 非激活状态，抑制移动
-    if not active:
-        return False
-    
-    # 检查是否到达左边缘
-    if x <= edge_threshold:
-        print(f"鼠标到达左边缘，归还控制权给服务端")
-        active = False
-        # 通知服务端
-        try:
-            message = json.dumps({
-                'type': 'deactivate',
-                'y': y / screen_height
-            }) + '\n'
-            sock.sendall(message.encode('utf-8'))
-        except:
-            pass
-        return False
+    # 只有激活时才检测边缘
+    if active:
+        # 检查是否到达左边缘
+        if x <= edge_threshold:
+            print(f"鼠标到达左边缘，归还控制权给服务端")
+            active = False
+            # 通知服务端
+            try:
+                message = json.dumps({
+                    'type': 'deactivate',
+                    'y': y / screen_height
+                }) + '\n'
+                sock.sendall(message.encode('utf-8'))
+            except:
+                pass
 
 def connect_to_server():
     """连接到服务器"""
@@ -108,7 +105,7 @@ def handle_server_messages():
 
 def start_mouse_listener():
     """启动鼠标监听"""
-    with Listener(on_move=on_move, suppress=True) as listener:
+    with Listener(on_move=on_move) as listener:
         listener.join()
 
 if __name__ == '__main__':
