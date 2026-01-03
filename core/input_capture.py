@@ -64,18 +64,20 @@ class InputCapture:
         self._is_active = True
         self._is_suppressed = False
         
-        # 启动鼠标监听器
+        # 启动鼠标监听器（带抑制功能）
         self._mouse_listener = mouse.Listener(
             on_move=self._handle_mouse_move,
             on_click=self._handle_mouse_click,
-            on_scroll=self._handle_mouse_scroll
+            on_scroll=self._handle_mouse_scroll,
+            suppress=False  # 不全局抑制，由回调决定
         )
         self._mouse_listener.start()
         
-        # 启动键盘监听器
+        # 启动键盘监听器（带抑制功能）
         self._keyboard_listener = keyboard.Listener(
             on_press=self._handle_key_press,
-            on_release=self._handle_key_release
+            on_release=self._handle_key_release,
+            suppress=False  # 不全局抑制，由回调决定
         )
         self._keyboard_listener.start()
         
@@ -125,11 +127,14 @@ class InputCapture:
                 self._on_mouse_move(x, y)
             except Exception as e:
                 logger.error(f"Error in mouse move callback: {e}")
+        
+        # 如果被抑制，返回False阻止事件传递到系统
+        if self._is_suppressed:
+            return False
     
     def _handle_mouse_click(self, x, y, button, pressed):
         """处理鼠标点击事件"""
         if not self._is_active:
-            return
             return
         
         if self._on_mouse_click:
@@ -139,6 +144,10 @@ class InputCapture:
                 self._on_mouse_click(x, y, button_num, pressed)
             except Exception as e:
                 logger.error(f"Error in mouse click callback: {e}")
+        
+        # 如果被抑制，返回False阻止事件传递到系统
+        if self._is_suppressed:
+            return False
     
     def _handle_mouse_scroll(self, x, y, dx, dy):
         """处理鼠标滚轮事件"""
@@ -150,6 +159,10 @@ class InputCapture:
                 self._on_mouse_scroll(x, y, int(dx), int(dy))
             except Exception as e:
                 logger.error(f"Error in mouse scroll callback: {e}")
+        
+        # 如果被抑制，返回False阻止事件传递到系统
+        if self._is_suppressed:
+            return False
     
     def _handle_key_press(self, key):
         """处理键盘按下事件"""
@@ -161,11 +174,14 @@ class InputCapture:
                 self._on_key_press(key)
             except Exception as e:
                 logger.error(f"Error in key press callback: {e}")
+        
+        # 如果被抑制，返回False阻止事件传递到系统
+        if self._is_suppressed:
+            return False
     
     def _handle_key_release(self, key):
         """处理键盘抬起事件"""
         if not self._is_active:
-            return
             return
         
         if self._on_key_release:
@@ -173,6 +189,10 @@ class InputCapture:
                 self._on_key_release(key)
             except Exception as e:
                 logger.error(f"Error in key release callback: {e}")
+        
+        # 如果被抑制，返回False阻止事件传递到系统
+        if self._is_suppressed:
+            return False
     
     @staticmethod
     def _convert_mouse_button(button) -> int:
