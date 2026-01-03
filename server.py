@@ -44,8 +44,8 @@ def on_move(x, y):
     """鼠标移动事件处理"""
     global active
     
+    # 非激活状态，抑制移动
     if not active:
-        # client 控制中，抑制 server 的鼠标移动
         return False
     
     # 检查是否到达边缘
@@ -58,7 +58,7 @@ def on_move(x, y):
             'x': 0,
             'y': y / screen_height
         })
-        return False  # 抑制这次移动
+        return False
 
 def handle_client(client_socket, addr):
     """处理客户端连接"""
@@ -118,7 +118,7 @@ def start_server():
 
 def start_mouse_listener():
     """启动鼠标监听"""
-    with Listener(on_move=on_move) as listener:
+    with Listener(on_move=on_move, suppress=True) as listener:
         listener.join()
 
 if __name__ == '__main__':
