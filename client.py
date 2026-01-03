@@ -282,13 +282,18 @@ def handle_key_release(payload):
 
 def main():
     """主函数"""
+    global logger
+    
     try:
         # 初始化
         init()
         
         # 启动
         if not start():
-            logger.error("Failed to start client")
+            if logger:
+                logger.error("Failed to start client")
+            else:
+                print("Failed to start client")
             sys.exit(1)
         
         # 主循环
@@ -300,9 +305,17 @@ def main():
                 network_client.send_ping()
     
     except KeyboardInterrupt:
-        logger.info("\nReceived interrupt signal")
+        if logger:
+            logger.info("\nReceived interrupt signal")
+        else:
+            print("\nReceived interrupt signal")
     except Exception as e:
-        logger.error(f"Unexpected error: {e}", exc_info=True)
+        if logger:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+        else:
+            print(f"Unexpected error: {e}")
+            import traceback
+            traceback.print_exc()
     finally:
         stop()
 
