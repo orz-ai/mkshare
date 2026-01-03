@@ -7,7 +7,7 @@ import json
 from pynput.mouse import Controller
 
 # 配置
-SERVER_HOST = '192.168.1.100'  # 修改为你的服务端IP地址
+SERVER_HOST = '192.168.31.199'  # 修改为你的服务端IP地址
 SERVER_PORT = 9999
 
 class MouseShareClient:
