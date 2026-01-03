@@ -114,11 +114,12 @@ class InputCapture:
     
     def _handle_mouse_move(self, x, y):
         """处理鼠标移动事件"""
-        if not self._is_active or self._is_suppressed:
+        if not self._is_active:
             return
         
         self._last_mouse_pos = (x, y)
         
+        # 即使被抑制也要继续捕获和转发
         if self._on_mouse_move:
             try:
                 self._on_mouse_move(x, y)
@@ -127,7 +128,8 @@ class InputCapture:
     
     def _handle_mouse_click(self, x, y, button, pressed):
         """处理鼠标点击事件"""
-        if not self._is_active or self._is_suppressed:
+        if not self._is_active:
+            return
             return
         
         if self._on_mouse_click:
@@ -140,7 +142,7 @@ class InputCapture:
     
     def _handle_mouse_scroll(self, x, y, dx, dy):
         """处理鼠标滚轮事件"""
-        if not self._is_active or self._is_suppressed:
+        if not self._is_active:
             return
         
         if self._on_mouse_scroll:
@@ -151,7 +153,7 @@ class InputCapture:
     
     def _handle_key_press(self, key):
         """处理键盘按下事件"""
-        if not self._is_active or self._is_suppressed:
+        if not self._is_active:
             return
         
         if self._on_key_press:
@@ -162,7 +164,8 @@ class InputCapture:
     
     def _handle_key_release(self, key):
         """处理键盘抬起事件"""
-        if not self._is_active or self._is_suppressed:
+        if not self._is_active:
+            return
             return
         
         if self._on_key_release:
