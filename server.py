@@ -1,243 +1,270 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+MKShare Server - 鼠标键盘共享服务端
+"""
 
-"""
-MKShare Server - 服务端主程序
-运行在主控设备上，捕获输入并发送到客户端
-"""
+import socket
+import threading
+import json
+import logging
+import yaml
 import sys
-import time
-import signal
-from config.settings import Settings
-from core.input_capture import InputCapture
-from core.screen_manager import ScreenManager
-from network.server import NetworkServer
-from network.protocol import (
-    MSG_MOUSE_MOVE, MSG_MOUSE_CLICK, MSG_MOUSE_SCROLL, MSG_MOUSE_ENTER,
-    MSG_KEY_PRESS, MSG_KEY_RELEASE, MSG_SWITCH_IN, MSG_SWITCH_OUT
-)
-from utils.logger import setup_logger
-
-logger = setup_logger('Server')
+from pathlib import Path
+from pynput.mouse import Controller as MouseController, Button
+from pynput.keyboard import Controller as KeyboardController
+import colorlog
 
 
 class MKShareServer:
     """MKShare 服务端主类"""
     
-    def __init__(self, config_file='config.yaml'):
-        self.config = Settings(config_file)
-        self.input_capture = None
-        self.screen_manager = None
-        self.network_server = None
-        self.running = False
-        self.is_controlling_local = True  # True=控制本地, False=控制远程
-        self._last_mouse_pos = None  # 记录上一次鼠标位置，用于计算delta
-        self._trigger_edge = None  # 记录触发的边缘方向
-        self._movement_threshold = 3  # 移动阈值，小于此值的移动将被忽略
+    def __init__(self, config_path='config.yaml'):
+        self.config = self._load_config(config_path)
+        self._setup_logging()
         
-        # 配置日志级别
-        log_level = self.config.get('logging.level', 'INFO')
-        import logging
-        logger.setLevel(getattr(logging, log_level))
+        # 网络配置
+        self.host = self.config['network']['server']['host']
+        self.port = self.config['network']['server']['port']
+        
+        # 控制器
+        self.mouse = MouseController()
+        self.keyboard = KeyboardController()
+        
+        # 服务器状态
+        self.server_socket = None
+        self.running = False
+        self.clients = []
+        
+        self.logger.info("MKShare Server 初始化完成")
+    
+    def _load_config(self, config_path):
+        """加载配置文件"""
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            print(f"加载配置文件失败: {e}")
+            sys.exit(1)
+    
+    def _setup_logging(self):
+        """设置日志"""
+        log_level = self.config['logging']['level']
+        log_file = self.config['logging']['file']
+        
+        # 创建日志目录
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        
+        # 配置彩色日志
+        formatter = colorlog.ColoredFormatter(
+            '%(log_color)s%(asctime)s - %(levelname)s - %(message)s',
+            log_colors={
+                'DEBUG': 'cyan',
+                'INFO': 'green',
+                'WARNING': 'yellow',
+                'ERROR': 'red',
+                'CRITICAL': 'red,bg_white',
+            }
+        )
+        
+        # 控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        
+        # 文件处理器
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s'
+        ))
+        
+        # 配置logger
+        self.logger = logging.getLogger('MKShareServer')
+        self.logger.setLevel(getattr(logging, log_level))
+        self.logger.addHandler(console_handler)
+        self.logger.addHandler(file_handler)
     
     def start(self):
         """启动服务器"""
-        logger.info("=" * 50)
-        logger.info("MKShare Server 启动中...")
-        logger.info("=" * 50)
-        
-        # 初始化屏幕管理器
-        edge_threshold = self.config.get('screen_switch.edge_threshold', 5)
-        edge_delay = self.config.get('screen_switch.edge_delay', 0.3)
-        self.screen_manager = ScreenManager(edge_threshold, edge_delay)
-        
-        # 获取主屏幕尺寸
-        primary_screen = self.screen_manager.get_primary_screen()
-        screen_width = primary_screen['width']
-        screen_height = primary_screen['height']
-        
-        # 初始化输入捕获
-        self.input_capture = InputCapture()
-        self.input_capture.set_screen_size(screen_width, screen_height)
-        self.input_capture.set_edge_threshold(edge_threshold)
-        # 设置屏幕尺寸（用于鼠标拉回中央）
-        primary_screen = self.screen_manager.get_primary_screen()
-        self.input_capture._screen_width = primary_screen['width']
-        self.input_capture._screen_height = primary_screen['height']
-        self.input_capture.register_callback('mouse_move', self._on_mouse_move)
-        self.input_capture.register_callback('mouse_click', self._on_mouse_click)
-        self.input_capture.register_callback('key_press', self._on_key_press)
-        self.input_capture.register_callback('key_release', self._on_key_release)
-        self.input_capture.register_callback('edge_trigger', self._on_edge_trigger)
-        self.input_capture.start()
-        
-        # 初始化网络服务器
-        host = self.config.get('network.server.host', '0.0.0.0')
-        port = self.config.get('network.server.port', 41234)
-        self.network_server = NetworkServer(host, port)
-        self.network_server.register_callback('client_connected', self._on_client_connected)
-        self.network_server.register_callback('client_disconnected', self._on_client_disconnected)
-        
-        if not self.network_server.start():
-            logger.error("启动网络服务器失败")
-            return False
-        
-        self.running = True
-        logger.info("服务器启动成功！")
-        logger.info(f"监听地址: {host}:{port}")
-        logger.info("等待客户端连接...")
-        
-        return True
+        try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(5)
+            self.running = True
+            
+            self.logger.info(f"服务器启动成功，监听 {self.host}:{self.port}")
+            
+            # 接受客户端连接
+            accept_thread = threading.Thread(target=self._accept_clients, daemon=True)
+            accept_thread.start()
+            
+            # 主线程等待
+            try:
+                while self.running:
+                    threading.Event().wait(1)
+            except KeyboardInterrupt:
+                self.logger.info("接收到停止信号")
+                self.stop()
+                
+        except Exception as e:
+            self.logger.error(f"服务器启动失败: {e}")
+            sys.exit(1)
+    
+    def _accept_clients(self):
+        """接受客户端连接"""
+        while self.running:
+            try:
+                client_socket, address = self.server_socket.accept()
+                self.logger.info(f"客户端连接: {address}")
+                
+                # 为每个客户端创建处理线程
+                client_thread = threading.Thread(
+                    target=self._handle_client,
+                    args=(client_socket, address),
+                    daemon=True
+                )
+                client_thread.start()
+                self.clients.append((client_socket, address))
+                
+            except Exception as e:
+                if self.running:
+                    self.logger.error(f"接受连接失败: {e}")
+    
+    def _handle_client(self, client_socket, address):
+        """处理客户端消息"""
+        buffer = ""
+        try:
+            while self.running:
+                data = client_socket.recv(4096).decode('utf-8')
+                if not data:
+                    break
+                
+                buffer += data
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
+                    if line:
+                        self._process_message(line)
+                        
+        except Exception as e:
+            self.logger.error(f"处理客户端 {address} 消息失败: {e}")
+        finally:
+            self.logger.info(f"客户端断开: {address}")
+            client_socket.close()
+            if (client_socket, address) in self.clients:
+                self.clients.remove((client_socket, address))
+    
+    def _process_message(self, message):
+        """处理接收到的消息"""
+        try:
+            msg = json.loads(message)
+            msg_type = msg.get('type')
+            
+            if msg_type == 'mouse_move':
+                self._handle_mouse_move(msg)
+            elif msg_type == 'mouse_click':
+                self._handle_mouse_click(msg)
+            elif msg_type == 'mouse_scroll':
+                self._handle_mouse_scroll(msg)
+            elif msg_type == 'mouse_drag':
+                self._handle_mouse_drag(msg)
+            else:
+                self.logger.warning(f"未知的消息类型: {msg_type}")
+                
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON 解析失败: {e}")
+        except Exception as e:
+            self.logger.error(f"处理消息失败: {e}")
+    
+    def _handle_mouse_move(self, msg):
+        """处理鼠标移动"""
+        try:
+            x = msg['x']
+            y = msg['y']
+            self.mouse.position = (x, y)
+            self.logger.debug(f"鼠标移动到: ({x}, {y})")
+        except Exception as e:
+            self.logger.error(f"鼠标移动失败: {e}")
+    
+    def _handle_mouse_click(self, msg):
+        """处理鼠标点击"""
+        try:
+            button_name = msg['button']
+            pressed = msg['pressed']
+            
+            # 转换按钮名称
+            button_map = {
+                'left': Button.left,
+                'right': Button.right,
+                'middle': Button.middle
+            }
+            button = button_map.get(button_name, Button.left)
+            
+            if pressed:
+                self.mouse.press(button)
+                self.logger.debug(f"鼠标按下: {button_name}")
+            else:
+                self.mouse.release(button)
+                self.logger.debug(f"鼠标释放: {button_name}")
+                
+        except Exception as e:
+            self.logger.error(f"鼠标点击失败: {e}")
+    
+    def _handle_mouse_scroll(self, msg):
+        """处理鼠标滚轮"""
+        try:
+            dx = msg['dx']
+            dy = msg['dy']
+            self.mouse.scroll(dx, dy)
+            self.logger.debug(f"鼠标滚动: dx={dx}, dy={dy}")
+        except Exception as e:
+            self.logger.error(f"鼠标滚动失败: {e}")
+    
+    def _handle_mouse_drag(self, msg):
+        """处理鼠标拖拽"""
+        try:
+            x = msg['x']
+            y = msg['y']
+            # 拖拽时移动鼠标即可，按钮状态已经在 mouse_click 中处理
+            self.mouse.position = (x, y)
+            self.logger.debug(f"鼠标拖拽到: ({x}, {y})")
+        except Exception as e:
+            self.logger.error(f"鼠标拖拽失败: {e}")
     
     def stop(self):
         """停止服务器"""
-        logger.info("正在停止服务器...")
+        self.logger.info("正在停止服务器...")
         self.running = False
         
-        if self.input_capture:
-            self.input_capture.stop()
+        # 关闭所有客户端连接
+        for client_socket, address in self.clients:
+            try:
+                client_socket.close()
+            except:
+                pass
         
-        if self.network_server:
-            self.network_server.stop()
+        # 关闭服务器socket
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+            except:
+                pass
         
-        logger.info("服务器已停止")
-    
-    def run(self):
-        """运行服务器主循环"""
-        try:
-            while self.running:
-                time.sleep(0.1)
-        except KeyboardInterrupt:
-            logger.info("收到中断信号")
-        finally:
-            self.stop()
-    
-    def _on_edge_trigger(self, event):
-        """处理边缘触发事件（类似DeviceShare的judge_move_out）"""
-        if not self.is_controlling_local:
-            return
-        
-        edge = event['edge']
-        x, y = event['x'], event['y']
-        logger.info(f"触发边缘切换: {edge} at ({x}, {y})")
-        
-        self._trigger_edge = edge
-        self._last_mouse_pos = (x, y)
-        self._switch_to_remote()
-    
-    def _on_mouse_move(self, event):
-        """处理鼠标移动事件"""
-        x, y = event['x'], event['y']
-        
-        # 如果正在控制远程，发送鼠标移动增量
-        if not self.is_controlling_local and self.network_server.client_connection:
-            # 在抑制模式下，event包含dx/dy
-            if 'dx' in event and 'dy' in event:
-                dx = event['dx']
-                dy = event['dy']
-                if abs(dx) > 0 or abs(dy) > 0:
-                    logger.info(f"[服务器] 发送鼠标移动: dx={dx}, dy={dy}")
-                    self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
-            elif self._last_mouse_pos:
-                # 降级方案：自己计算
-                dx = x - self._last_mouse_pos[0]
-                dy = y - self._last_mouse_pos[1]
-                if abs(dx) > 0 or abs(dy) > 0:
-                    self.network_server.send_message(MSG_MOUSE_MOVE, {'dx': dx, 'dy': dy})
-                self._last_mouse_pos = (x, y)
-            else:
-                self._last_mouse_pos = (x, y)
-    
-    def _on_mouse_click(self, event):
-        """处理鼠标点击事件"""
-        if not self.is_controlling_local and self.network_server.client_connection:
-            self.network_server.send_message(
-                MSG_MOUSE_CLICK,
-                {
-                    'button': event['button'],
-                    'pressed': event['pressed']
-                }
-            )
-    
-    def _on_key_press(self, event):
-        """处理键盘按下事件"""
-        # ESC 键返回本地控制
-        if event['key'] == 'esc' and not self.is_controlling_local:
-            logger.info("按下 ESC，切换回本地控制")
-            self._switch_to_local()
-            return
-        
-        if not self.is_controlling_local and self.network_server.client_connection:
-            self.network_server.send_message(MSG_KEY_PRESS, {'key': event['key']})
-    
-    def _on_key_release(self, event):
-        """处理键盘抬起事件"""
-        if not self.is_controlling_local and self.network_server.client_connection:
-            self.network_server.send_message(MSG_KEY_RELEASE, {'key': event['key']})
-    
-    def _switch_to_remote(self):
-        """切换到远程控制"""
-        if not self.network_server.client_connection:
-            logger.warning("没有客户端连接，无法切换")
-            return
-        
-        self.is_controlling_local = False
-        # 设置focus=False，开始捕获并发送输入到远程
-        self.input_capture.set_focus(False)
-        
-        # 发送鼠标进入消息（类似DeviceShare的MOUSE_MOVE_TO）
-        x, y = self._last_mouse_pos
-        self.network_server.send_message(MSG_MOUSE_ENTER, {
-            'x': x,
-            'y': y,
-            'edge': self._trigger_edge
-        })
-        
-        # 发送切换消息
-        self.network_server.send_message(MSG_SWITCH_IN, {'edge': self._trigger_edge})
-        logger.info("已切换到远程控制模式")
-    
-    def _switch_to_local(self):
-        """切换回本地控制"""
-        self.is_controlling_local = True
-        # 恢复focus=True，回到本地控制
-        self.input_capture.set_focus(True)
-        # 重置位置记录
-        self._last_mouse_pos = None
-        self._trigger_edge = None
-        if self.network_server.client_connection:
-            self.network_server.send_message(MSG_SWITCH_OUT)
-        logger.info("已切换回本地控制模式")
-    
-    def _on_client_connected(self, address):
-        """客户端连接回调"""
-        logger.info(f"客户端已连接: {address}")
-    
-    def _on_client_disconnected(self):
-        """客户端断开回调"""
-        logger.warning("客户端已断开")
-        self._switch_to_local()
-
-
-def signal_handler(sig, frame):
-    """信号处理器"""
-    logger.info("收到终止信号，正在退出...")
-    sys.exit(0)
+        self.logger.info("服务器已停止")
 
 
 def main():
     """主函数"""
-    # 注册信号处理器
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    print("""
+╔══════════════════════════════════════╗
+║       MKShare Server v1.0            ║
+║   鼠标键盘共享 - 服务端               ║
+╚══════════════════════════════════════╝
+    """)
     
-    # 创建并启动服务器
     server = MKShareServer()
-    
-    if server.start():
-        server.run()
-    else:
-        logger.error("服务器启动失败")
-        sys.exit(1)
+    server.start()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
+

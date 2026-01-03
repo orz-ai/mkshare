@@ -8,7 +8,7 @@ network:
     port: 41234
   
   client:
-    server_host: 192.168.1.100  # 修改为服务器的 IP 地址
+    server_host: 192.168.31.199  # 修改为服务器的 IP 地址
     server_port: 41234
     auto_reconnect: true
     reconnect_interval: 5
