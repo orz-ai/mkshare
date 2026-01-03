@@ -64,20 +64,20 @@ class InputCapture:
         self._is_active = True
         self._is_suppressed = False
         
-        # 启动鼠标监听器（带抑制功能）
+        # 启动鼠标监听器（初始不抑制）
         self._mouse_listener = mouse.Listener(
             on_move=self._handle_mouse_move,
             on_click=self._handle_mouse_click,
             on_scroll=self._handle_mouse_scroll,
-            suppress=True  # 启用抑制，由回调返回值决定是否抑制
+            suppress=False  # 初始不抑制，正常使用
         )
         self._mouse_listener.start()
         
-        # 启动键盘监听器（带抑制功能）
+        # 启动键盘监听器（初始不抑制）
         self._keyboard_listener = keyboard.Listener(
             on_press=self._handle_key_press,
             on_release=self._handle_key_release,
-            suppress=True  # 启用抑制，由回调返回值决定是否抑制
+            suppress=False  # 初始不抑制，正常使用
         )
         self._keyboard_listener.start()
         
@@ -100,15 +100,44 @@ class InputCapture:
         
         logger.info("Input capture stopped")
     
-    def suppress(self, suppressed: bool = True):
+    def suppress(self, suppressed: bool = False):
         """
         抑制/恢复本地输入
+        需要重启监听器以改变suppress模式
         
         Args:
             suppressed: True 抑制，False 恢复
         """
+        if self._is_suppressed == suppressed:
+            return
+        
         self._is_suppressed = suppressed
-        logger.debug(f"Input {'suppressed' if suppressed else 'resumed'}")
+        
+        # 重启监听器以应用新的suppress设置
+        if self._is_active:
+            # 停止旧监听器
+            if self._mouse_listener:
+                self._mouse_listener.stop()
+            if self._keyboard_listener:
+                self._keyboard_listener.stop()
+            
+            # 创建新监听器
+            self._mouse_listener = mouse.Listener(
+                on_move=self._handle_mouse_move,
+                on_click=self._handle_mouse_click,
+                on_scroll=self._handle_mouse_scroll,
+                suppress=suppressed  # 根据参数设置是否抑制
+            )
+            self._mouse_listener.start()
+            
+            self._keyboard_listener = keyboard.Listener(
+                on_press=self._handle_key_press,
+                on_release=self._handle_key_release,
+                suppress=suppressed  # 根据参数设置是否抑制
+            )
+            self._keyboard_listener.start()
+        
+        logger.info(f"Input {'suppressed' if suppressed else 'resumed'}")
     
     def get_mouse_position(self) -> tuple:
         """获取当前鼠标位置"""
@@ -117,24 +146,24 @@ class InputCapture:
     def _handle_mouse_move(self, x, y):
         """处理鼠标移动事件"""
         if not self._is_active:
-            return True  # 不抑制
+            return
         
         self._last_mouse_pos = (x, y)
         
-        # 即使被抑制也要继续捕获和转发
         if self._on_mouse_move:
             try:
                 self._on_mouse_move(x, y)
             except Exception as e:
                 logger.error(f"Error in mouse move callback: {e}")
         
-        # 如果被抑制，返回False阻止事件传递到系统；否则返回True允许传递
-        return not self._is_suppressed
+        # suppress=True时才有效，返回False会抑制事件
+        if self._is_suppressed:
+            return False
     
     def _handle_mouse_click(self, x, y, button, pressed):
         """处理鼠标点击事件"""
         if not self._is_active:
-            return True  # 不抑制
+            return
         
         if self._on_mouse_click:
             try:
@@ -144,13 +173,14 @@ class InputCapture:
             except Exception as e:
                 logger.error(f"Error in mouse click callback: {e}")
         
-        # 如果被抑制，返回False阻止事件传递到系统；否则返回True允许传递
-        return not self._is_suppressed
+        # suppress=True时才有效，返回False会抑制事件
+        if self._is_suppressed:
+            return False
     
     def _handle_mouse_scroll(self, x, y, dx, dy):
         """处理鼠标滚轮事件"""
         if not self._is_active:
-            return True  # 不抑制
+            return
         
         if self._on_mouse_scroll:
             try:
@@ -158,13 +188,14 @@ class InputCapture:
             except Exception as e:
                 logger.error(f"Error in mouse scroll callback: {e}")
         
-        # 如果被抑制，返回False阻止事件传递到系统；否则返回True允许传递
-        return not self._is_suppressed
+        # suppress=True时才有效，返回False会抑制事件
+        if self._is_suppressed:
+            return False
     
     def _handle_key_press(self, key):
         """处理键盘按下事件"""
         if not self._is_active:
-            return True  # 不抑制
+            return
         
         if self._on_key_press:
             try:
@@ -172,13 +203,14 @@ class InputCapture:
             except Exception as e:
                 logger.error(f"Error in key press callback: {e}")
         
-        # 如果被抑制，返回False阻止事件传递到系统；否则返回True允许传递
-        return not self._is_suppressed
+        # suppress=True时才有效，返回False会抑制事件
+        if self._is_suppressed:
+            return False
     
     def _handle_key_release(self, key):
         """处理键盘抬起事件"""
         if not self._is_active:
-            return True  # 不抑制
+            return
         
         if self._on_key_release:
             try:
@@ -186,8 +218,9 @@ class InputCapture:
             except Exception as e:
                 logger.error(f"Error in key release callback: {e}")
         
-        # 如果被抑制，返回False阻止事件传递到系统；否则返回True允许传递
-        return not self._is_suppressed
+        # suppress=True时才有效，返回False会抑制事件
+        if self._is_suppressed:
+            return False
     
     @staticmethod
     def _convert_mouse_button(button) -> int:
