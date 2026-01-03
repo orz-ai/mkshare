@@ -115,11 +115,19 @@ class InputCapture:
         
         # 重启监听器以应用新的suppress设置
         if self._is_active:
-            # 停止旧监听器
+            # 停止旧监听器并等待线程结束
             if self._mouse_listener:
                 self._mouse_listener.stop()
+                try:
+                    self._mouse_listener.join(timeout=1.0)
+                except:
+                    pass
             if self._keyboard_listener:
                 self._keyboard_listener.stop()
+                try:
+                    self._keyboard_listener.join(timeout=1.0)
+                except:
+                    pass
             
             # 创建新监听器
             self._mouse_listener = mouse.Listener(
