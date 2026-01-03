@@ -16,6 +16,12 @@ from pynput import mouse
 from pynput.mouse import Controller as MouseController
 from screeninfo import get_monitors
 import colorlog
+import platform
+
+# Windows 特定导入
+if platform.system() == 'Windows':
+    import win32api
+    import win32con
 
 
 class MKShareClient:
@@ -61,9 +67,7 @@ class MKShareClient:
         # 鼠标控制器和锁定
         self.mouse_controller = MouseController()
         self.mouse_listener = None
-        self.lock_position = None  # 鼠标锁定位置
         self.last_mouse_pos = None  # 上次鼠标位置（用于计算增量）
-        self.is_resetting_mouse = False  # 是否正在重置鼠标（避免递归）
         
         self.logger.info("MKShare Client 初始化完成")
     
@@ -172,31 +176,21 @@ class MKShareClient:
                     self._enter_sharing_mode(x, y)
                 self.last_edge_time = current_time
         else:
-            # 共享模式下锁定本地鼠标
-            if self.is_resetting_mouse:
-                return
-            
-            # 计算鼠标移动增量
+            # 共享模式下，计算移动增量
             if self.last_mouse_pos:
                 dx = x - self.last_mouse_pos[0]
                 dy = y - self.last_mouse_pos[1]
                 
-                # 只有真实移动才发送（过滤掉重置产生的移动）
+                # 发送增量
                 if abs(dx) > 0 or abs(dy) > 0:
-                    # 发送相对移动而不是绝对位置
                     self._send_message({
                         'type': 'mouse_move_relative',
                         'dx': dx,
                         'dy': dy
                     })
+                    self.logger.debug(f"鼠标增量: dx={dx}, dy={dy}")
             
-            # 重置鼠标到锁定位置
             self.last_mouse_pos = (x, y)
-            self.is_resetting_mouse = True
-            self.mouse_controller.position = self.lock_position
-            self.is_resetting_mouse = False
-            self.last_mouse_pos = self.lock_position
-    
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件"""
         if self.sharing_mode:
@@ -229,29 +223,29 @@ class MKShareClient:
     def _enter_sharing_mode(self, x, y):
         """进入共享模式"""
         self.sharing_mode = True
-        # 设置鼠标锁定位置（屏幕中心）
-        self.lock_position = (self.screen_width // 2, self.screen_height // 2)
-        self.last_mouse_pos = self.lock_position
-        # 立即将鼠标移动到锁定位置
-        self.is_resetting_mouse = True
-        self.mouse_controller.position = self.lock_position
-        self.is_resetting_mouse = False
-        self.logger.info(f"进入共享模式，鼠标锁定在 {self.lock_position}")
-        # 可以添加视觉提示或声音提示
+        self.last_mouse_pos = (x, y)
+        
+        # 使用 ClipCursor 限制鼠标在当前位置周围的小区域内（Windows）
+        if platform.system() == 'Windows':
+            # 限制在当前位置周围 50x50 像素
+            left = x - 25
+            top = y - 25
+            right = x + 25
+            bottom = y + 25
+            win32api.ClipCursor((left, top, right, bottom))
+            self.logger.info(f"进入共享模式，鼠标限制在 ({left},{top})-({right},{bottom})")
+        else:
+            self.logger.info("进入共享模式（非Windows系统，无鼠标限制）")
     
     def _exit_sharing_mode(self):
         """退出共享模式"""
         self.sharing_mode = False
-        self.lock_position = None
         self.last_mouse_pos = None
-        self.logger.info("进入共享模式")
-        # 可以添加视觉提示或声音提示
-    
-    def _exit_sharing_mode(self):
-        """退出共享模式"""
-        self.sharing_mode = False
-        self.logger.info("退出共享模式")
-        # 可以添加视觉提示或声音提示
+        
+        # 解除鼠标限制（Windows）
+        if platform.system() == 'Windows':
+            win32api.ClipCursor(None)
+            self.logger.info("退出共享模式，解除鼠标限制")
     
     def _send_message(self, message):
         """发送消息到服务器"""
