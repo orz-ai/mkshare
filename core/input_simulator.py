@@ -252,70 +252,65 @@ class InputSimulator:
         
         # 创建统一按键码到 pynput Key 的映射
         # 使用 Windows 虚拟键码作为参考
-        key_map = {
-            # 功能键
-            0x08: Key.backspace,
-            0x09: Key.tab,
-            0x0D: Key.enter,
-            0x10: Key.shift,
-            0x11: Key.ctrl,
-            0x12: Key.alt,
-            0x14: Key.caps_lock,
-            0x1B: Key.esc,
-            0x20: Key.space,
-            0x21: Key.page_up,
-            0x22: Key.page_down,
-            0x23: Key.end,
-            0x24: Key.home,
-            
-            # 方向键
-            0x25: Key.left,
-            0x26: Key.up,
-            0x27: Key.right,
-            0x28: Key.down,
-            
-            # 编辑键
-            0x2D: Key.insert,
-            0x2E: Key.delete,
-            
-            # 功能键 F1-F12
-            0x70: Key.f1,
-            0x71: Key.f2,
-            0x72: Key.f3,
-            0x73: Key.f4,
-            0x74: Key.f5,
-            0x75: Key.f6,
-            0x76: Key.f7,
-            0x77: Key.f8,
-            0x78: Key.f9,
-            0x79: Key.f10,
-            0x7A: Key.f11,
-            0x7B: Key.f12,
-            
-            # 修饰键
-            0xA0: Key.shift_l,
-            0xA1: Key.shift_r,
-            0xA2: Key.ctrl_l,
-            0xA3: Key.ctrl_r,
-            0xA4: Key.alt_l,
-            0xA5: Key.alt_r,
-        }
+        key_map = {}
         
-        # 添加平台特定的键（如果存在）
-        # Windows/Linux 特有的键
-        try:
-            key_map[0x13] = Key.pause
-        except AttributeError:
-            pass  # macOS 没有 pause 键
+        # 安全添加键的辅助函数
+        def safe_add(code, key_name):
+            try:
+                key_map[code] = getattr(Key, key_name)
+            except AttributeError:
+                pass  # 该平台不支持此键
         
-        try:
-            key_map[0x90] = Key.num_lock
-        except AttributeError:
-            pass  # 某些平台可能没有
+        # 基础功能键（大多数平台都支持）
+        safe_add(0x08, 'backspace')
+        safe_add(0x09, 'tab')
+        safe_add(0x0D, 'enter')
+        safe_add(0x10, 'shift')
+        safe_add(0x11, 'ctrl')
+        safe_add(0x12, 'alt')
+        safe_add(0x13, 'pause')  # Windows/Linux
+        safe_add(0x14, 'caps_lock')
+        safe_add(0x1B, 'esc')
+        safe_add(0x20, 'space')
+        safe_add(0x21, 'page_up')
+        safe_add(0x22, 'page_down')
+        safe_add(0x23, 'end')
+        safe_add(0x24, 'home')
         
-        try:
-            key_map[0x91] = Key.scroll_lock
-        except AttributeError:
-            pass  # macOS 没有 scroll_lock 键
+        # 方向键
+        safe_add(0x25, 'left')
+        safe_add(0x26, 'up')
+        safe_add(0x27, 'right')
+        safe_add(0x28, 'down')
+        
+        # 编辑键
+        safe_add(0x2D, 'insert')  # macOS 没有
+        safe_add(0x2E, 'delete')
+        
+        # 功能键 F1-F12
+        safe_add(0x70, 'f1')
+        safe_add(0x71, 'f2')
+        safe_add(0x72, 'f3')
+        safe_add(0x73, 'f4')
+        safe_add(0x74, 'f5')
+        safe_add(0x75, 'f6')
+        safe_add(0x76, 'f7')
+        safe_add(0x77, 'f8')
+        safe_add(0x78, 'f9')
+        safe_add(0x79, 'f10')
+        safe_add(0x7A, 'f11')
+        safe_add(0x7B, 'f12')
+        
+        # 数字键盘锁定键
+        safe_add(0x90, 'num_lock')  # macOS 可能没有
+        safe_add(0x91, 'scroll_lock')  # macOS 没有
+        
+        # 修饰键
+        safe_add(0xA0, 'shift_l')
+        safe_add(0xA1, 'shift_r')
+        safe_add(0xA2, 'ctrl_l')
+        safe_add(0xA3, 'ctrl_r')
+        safe_add(0xA4, 'alt_l')
+        safe_add(0xA5, 'alt_r')
         
         return key_map
