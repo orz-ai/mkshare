@@ -34,24 +34,24 @@ def on_move(x, y):
     """鼠标移动事件处理"""
     global active
     
-    if active:
-        # 检查是否到达左边缘
-        if x <= edge_threshold:
-            print(f"鼠标到达左边缘，归还控制权给服务端")
-            active = False
-            # 通知服务端
-            try:
-                message = json.dumps({
-                    'type': 'deactivate',
-                    'y': y / screen_height  # 归一化 y 坐标
-                }) + '\n'
-                sock.sendall(message.encode('utf-8'))
-            except:
-                pass
-            return False  # 抑制此次移动
-    else:
+    if not active:
         # 未激活，抑制所有鼠标移动
         return False
+    
+    # 检查是否到达左边缘
+    if x <= edge_threshold:
+        print(f"鼠标到达左边缘，归还控制权给服务端")
+        active = False
+        # 通知服务端
+        try:
+            message = json.dumps({
+                'type': 'deactivate',
+                'y': y / screen_height
+            }) + '\n'
+            sock.sendall(message.encode('utf-8'))
+        except:
+            pass
+        return False  # 抑制这次移动
 
 def connect_to_server():
     """连接到服务器"""

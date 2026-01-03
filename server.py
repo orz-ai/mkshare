@@ -44,23 +44,21 @@ def on_move(x, y):
     """鼠标移动事件处理"""
     global active
     
-    if active:
-        # 检查是否到达边缘
-        if x >= screen_width - edge_threshold:
-            print(f"鼠标到达右边缘，切换到客户端控制")
-            active = False
-            # 将鼠标移回边缘内
-            mouse_controller.position = (screen_width - edge_threshold - 1, y)
-            # 通知客户端激活，鼠标从左边缘进入
-            broadcast_to_clients({
-                'type': 'activate',
-                'x': 0,
-                'y': y / screen_height  # 归一化 y 坐标
-            })
-            return False  # 抑制此次移动
-    else:
+    if not active:
         # client 控制中，抑制 server 的鼠标移动
         return False
+    
+    # 检查是否到达边缘
+    if x >= screen_width - edge_threshold:
+        print(f"鼠标到达右边缘，切换到客户端控制")
+        active = False
+        # 通知客户端激活
+        broadcast_to_clients({
+            'type': 'activate',
+            'x': 0,
+            'y': y / screen_height
+        })
+        return False  # 抑制这次移动
 
 def handle_client(client_socket, addr):
     """处理客户端连接"""
@@ -81,12 +79,10 @@ def handle_client(client_socket, addr):
                 try:
                     message = json.loads(line)
                     
-                    # 客户端到达左边缘，归还控制权
                     if message['type'] == 'deactivate':
                         print(f"客户端到达左边缘，切换回服务端控制")
                         active = True
                         y = int(message['y'] * screen_height)
-                        # 将鼠标移到右边缘
                         mouse_controller.position = (screen_width - edge_threshold - 1, y)
                     
                 except json.JSONDecodeError:
