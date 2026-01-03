@@ -136,11 +136,13 @@ def on_mouse_move(x, y):
             network_server.set_active_client(active_client_id)
             
             # 抑制本地输入
+            logger.info("Calling input_capture.suppress(True)")
             input_capture.suppress(True)
             
             # 立即发送初始位置（绝对坐标）
             msg = create_mouse_move_message(target_x, target_y, relative=False)
             network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
+            logger.info(f"Sent initial mouse position: ({target_x}, {target_y})")
             
             # 记录当前位置
             last_mouse_pos = (x, y)
@@ -148,15 +150,18 @@ def on_mouse_move(x, y):
     
     # 如果有活动客户端，使用相对移动
     if active_client_id:
+        logger.debug(f"Active client detected, mouse at ({x}, {y})")
         if last_mouse_pos:
             dx = x - last_mouse_pos[0]
             dy = y - last_mouse_pos[1]
             
+            logger.debug(f"Sending relative move: dx={dx}, dy={dy}")
             # 发送相对移动
             msg = create_mouse_move_message(0, 0, relative=True, dx=dx, dy=dy)
             network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
         else:
             # 没有上次位置，发送绝对坐标
+            logger.debug(f"Sending absolute move: ({x}, {y})")
             msg = create_mouse_move_message(x, y, relative=False)
             network_server.send_to_client(active_client_id, msg['type'], msg['payload'])
         

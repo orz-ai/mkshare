@@ -150,6 +150,8 @@ class InputCapture:
         
         self._last_mouse_pos = (x, y)
         
+        logger.debug(f"Mouse move captured: ({x}, {y}), suppressed={self._is_suppressed}")
+        
         if self._on_mouse_move:
             try:
                 self._on_mouse_move(x, y)
