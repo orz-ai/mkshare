@@ -205,11 +205,13 @@ def handle_switch_in(payload):
     
     reason = payload.get('reason', 'unknown')
     edge = payload.get('edge', '')
+    cursor_pos = payload.get('cursor_pos', {})
     
-    logger.info(f"Switched in (reason: {reason}, edge: {edge})")
+    logger.info(f"Switched in (reason: {reason}, edge: {edge}, cursor: {cursor_pos})")
     
     # 激活输入模拟
     input_simulator.activate()
+    logger.info(f"Simulator active: {input_simulator.is_active()}")
 
 
 def handle_switch_out(payload):
@@ -233,8 +235,10 @@ def handle_mouse_move(payload):
     if relative:
         dx = payload.get('dx', 0)
         dy = payload.get('dy', 0)
+        logger.debug(f"Mouse move relative: dx={dx}, dy={dy}")
         input_simulator.move_mouse_relative(dx, dy)
     else:
+        logger.debug(f"Mouse move absolute: x={x}, y={y}")
         input_simulator.move_mouse(x, y)
 
 

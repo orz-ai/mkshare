@@ -52,10 +52,13 @@ class InputSimulator:
             y: Y坐标
         """
         if not self._is_active:
+            logger.warning(f"Simulator not active, ignoring move_mouse({x}, {y})")
             return
         
         try:
+            logger.debug(f"Moving mouse to ({x}, {y})")
             self._mouse_controller.position = (x, y)
+            logger.debug(f"Mouse moved, current position: {self._mouse_controller.position}")
         except Exception as e:
             logger.error(f"Error moving mouse: {e}")
     
@@ -68,11 +71,14 @@ class InputSimulator:
             dy: Y方向移动量
         """
         if not self._is_active:
+            logger.warning(f"Simulator not active, ignoring move_mouse_relative({dx}, {dy})")
             return
         
         try:
             current_x, current_y = self._mouse_controller.position
-            self._mouse_controller.position = (current_x + dx, current_y + dy)
+            new_x, new_y = current_x + dx, current_y + dy
+            logger.debug(f"Moving mouse relatively: ({current_x}, {current_y}) + ({dx}, {dy}) = ({new_x}, {new_y})")
+            self._mouse_controller.position = (new_x, new_y)
         except Exception as e:
             logger.error(f"Error moving mouse relatively: {e}")
     
