@@ -1,13 +1,14 @@
 """
-鼠标共享服务端
-当鼠标移动到屏幕边缘时，将鼠标控制权交给客户端
+鼠标共享服务端 - 参考src实现
+监听鼠标移动，当鼠标移动到屏幕右边缘时，通过TCP发送初始位置，然后通过UDP发送相对移动
 """
 import socket
 import json
 import threading
 import yaml
 import platform
-from pynput import mouse
+import time
+from pynput import mouse as pynput_mouse
 from pynput.mouse import Controller
 from screeninfo import get_monitors
 
@@ -18,8 +19,8 @@ class MouseShareServer:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
-        self.host = config['network']['server']['host']
-        self.port = config['network']['server']['port']
+        self.tcp_port = config['network']['server']['port']
+        self.udp_port = self.tcp_port + 1  # UDP端口为TCP端口+1
         self.edge_threshold = config['screen_switch']['edge_threshold']
         
         # 解决Windows缩放偏移问题
@@ -34,40 +35,88 @@ class MouseShareServer:
         print(f"屏幕尺寸: {self.screen_width}x{self.screen_height}")
         
         # 状态变量
-        self.client_socket = None
+        self.client_tcp_socket = None
+        self.client_udp_addr = None
         self.is_controlling_client = False
-        self.last_pos = (0, 0)
+        self.mouse_focus = True
+        self.last_mouse_pos = (0, 0)
         self.mouse_controller = Controller()
         
-    def start_server(self):
-        """启动socket服务器"""
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((self.host, self.port))
-        server.listen(1)
-        print(f"服务器启动，监听 {self.host}:{self.port}")
+        # 创建UDP socket
+        self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
+    def start_tcp_server(self):
+        """启动TCP服务器，用于接收客户端连接和返回消息"""
+        tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        tcp_server.bind(('0.0.0.0', self.tcp_port))
+        tcp_server.listen(5)
+        print(f"TCP服务器启动，监听端口 {self.tcp_port}")
         
         while True:
-            print("等待客户端连接...")
-            self.client_socket, addr = server.accept()
-            print(f"客户端已连接: {addr}")
+            client, addr = tcp_server.accept()
+            threading.Thread(target=self.handle_tcp_client, args=(client, addr), daemon=True).start()
+    
+    def handle_tcp_client(self, client_socket, addr):
+        """处理TCP客户端连接"""
+        try:
+            # 接收消息
+            data = client_socket.recv(4096)
+            if not data:
+                return
             
-            # 保持连接，接收心跳
-            try:
+            msg = json.loads(data.decode('utf-8'))
+            msg_type = msg.get('type')
+            
+            if msg_type == 'connect':
+                # 客户端建立连接
+                self.client_tcp_socket = client_socket
+                self.client_udp_addr = (addr[0], msg['udp_port'])
+                print(f"客户端已连接: {addr}, UDP端口: {msg['udp_port']}")
+                # 发送确认
+                response = {'status': 'ok', 'udp_port': self.udp_port}
+                client_socket.sendall(json.dumps(response).encode('utf-8'))
+                # 保持连接
                 while True:
-                    data = self.client_socket.recv(1024)
+                    data = client_socket.recv(1024)
                     if not data:
                         break
-            except Exception as e:
-                print(f"连接异常: {e}")
             
-            print("客户端断开连接")
-            self.client_socket = None
-            self.is_controlling_client = False
+            elif msg_type == 'mouse_back':
+                # 鼠标返回服务端
+                print("鼠标返回服务端")
+                self.is_controlling_client = False
+                self.mouse_focus = True
+                # 将鼠标移动到右边缘
+                self.mouse_controller.position = (self.screen_width - 30, msg['y'])
+                # 发送确认
+                response = {'status': 'ok'}
+                client_socket.sendall(json.dumps(response).encode('utf-8'))
+                
+        except Exception as e:
+            print(f"处理TCP客户端错误: {e}")
+        finally:
+            if msg_type == 'connect':
+                print("客户端断开连接")
+                self.client_tcp_socket = None
+                self.client_udp_addr = None
+                self.is_controlling_client = False
+            client_socket.close()
+    
+    def on_click(self, x, y, button, pressed):
+        """鼠标点击事件"""
+        if self.is_controlling_client and self.client_udp_addr:
+            msg = {
+                'type': 'click',
+                'button': str(button),
+                'pressed': pressed
+            }
+            self.udp_socket.sendto(json.dumps(msg).encode('utf-8'), self.client_udp_addr)
     
     def on_move(self, x, y):
         """鼠标移动事件处理"""
-        if not self.client_socket:
+        if not self.mouse_focus:
+            # 如果焦点不在服务端，不处理
             return
         
         # 检测是否在右边缘
@@ -75,64 +124,111 @@ class MouseShareServer:
         
         # 进入客户端控制模式
         if not self.is_controlling_client:
-            if at_right_edge:
+            if at_right_edge and self.client_udp_addr:
                 print("鼠标移动到右边缘，切换到客户端控制")
                 self.is_controlling_client = True
-                self.last_pos = (x, y)
-                # 发送初始位置到客户端（客户端屏幕左侧）
-                self.send_mouse_command('move_to', 0, y)
+                self.mouse_focus = False
+                self.last_mouse_pos = self.mouse_controller.position
+                
+                # 通过TCP发送初始位置
+                try:
+                    tcp_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    tcp_client.connect((self.client_udp_addr[0], self.tcp_port))
+                    msg = {
+                        'type': 'move_to',
+                        'x': 30,
+                        'y': y
+                    }
+                    tcp_client.sendall(json.dumps(msg).encode('utf-8'))
+                    tcp_client.close()
+                except Exception as e:
+                    print(f"发送初始位置失败: {e}")
+                    self.is_controlling_client = False
+                    self.mouse_focus = True
                 return
-        
-        # 在客户端控制模式下
-        if self.is_controlling_client:
+    
+    def on_scroll(self, x, y, dx, dy):
+        """鼠标滚动事件"""
+        if self.is_controlling_client and self.client_udp_addr:
+            msg = {
+                'type': 'scroll',
+                'dx': dx,
+                'dy': dy
+            }
+            self.udp_socket.sendto(json.dumps(msg).encode('utf-8'), self.client_udp_addr)
+    
+    def mouse_listener_with_suppress(self):
+        """使用suppress模式的鼠标监听（控制客户端时）"""
+        def on_move_suppressed(x, y):
+            if not self.is_controlling_client:
+                return False  # 停止监听
+            
             # 计算相对移动
-            dx = x - self.last_pos[0]
-            dy = y - self.last_pos[1]
+            dx = x - self.last_mouse_pos[0]
+            dy = y - self.last_mouse_pos[1]
             
             # 发送相对移动到客户端
-            if dx != 0 or dy != 0:
-                self.send_mouse_command('move', dx, dy)
+            if (dx != 0 or dy != 0) and self.client_udp_addr:
+                msg = {
+                    'type': 'move',
+                    'x': dx,
+                    'y': dy
+                }
+                self.udp_socket.sendto(json.dumps(msg).encode('utf-8'), self.client_udp_addr)
             
-            # 将鼠标固定在右侧边缘，防止移出屏幕
-            fixed_x = self.screen_width - 20
-            self.mouse_controller.position = (fixed_x, y)
-            self.last_pos = (fixed_x, y)
+            # 更新位置但不实际移动鼠标（suppress模式会处理）
+            self.last_mouse_pos = (x, y)
             
-            # 检测是否返回服务端（鼠标向左移动）
-            if dx < -10:
-                print("检测到向左移动，返回服务端控制")
-                self.is_controlling_client = False
-    
-    def send_mouse_command(self, cmd_type, x, y):
-        """发送鼠标命令到客户端"""
-        try:
-            data = {
-                'type': cmd_type,  # 'move' 或 'move_to'
-                'x': int(x),
-                'y': int(y)
-            }
-            message = json.dumps(data) + '\n'
-            self.client_socket.sendall(message.encode('utf-8'))
-        except Exception as e:
-            print(f"发送命令失败: {e}")
-            self.is_controlling_client = False
+            # 检测鼠标是否移出边界（回到服务端的边缘检测）
+            if x <= 200 or y <= 200 or x >= self.screen_width - 200 or y >= self.screen_height - 200:
+                # 将鼠标移动到屏幕中心
+                self.mouse_controller.position = (self.screen_width // 2, self.screen_height // 2)
+                self.last_mouse_pos = self.mouse_controller.position
+            
+            return True  # 继续监听
+        
+        # 使用suppress模式监听
+        with pynput_mouse.Listener(on_move=on_move_suppressed, on_click=self.on_click, 
+                                   on_scroll=self.on_scroll, suppress=True) as listener:
+            listener.join()
     
     def run(self):
         """运行服务器"""
         try:
-            # 启动socket服务器线程
-            server_thread = threading.Thread(target=self.start_server, daemon=True)
-            server_thread.start()
+            # 启动TCP服务器线程
+            tcp_thread = threading.Thread(target=self.start_tcp_server, daemon=True)
+            tcp_thread.start()
             
-            # 启动鼠标监听
-            print("开始监听鼠标移动...")
+            print("鼠标共享服务器已启动")
             print(f"提示: 将鼠标移动到屏幕右边缘可切换到客户端控制")
-            with mouse.Listener(on_move=self.on_move) as listener:
-                listener.join()
+            
+            # 主循环：在正常监听和控制模式之间切换
+            while True:
+                if self.mouse_focus:
+                    # 正常监听模式
+                    with pynput_mouse.Events() as events:
+                        for event in events:
+                            if isinstance(event, pynput_mouse.Events.Move):
+                                self.on_move(event.x, event.y)
+                                if not self.mouse_focus:
+                                    # 切换到控制模式
+                                    break
+                
+                if not self.mouse_focus:
+                    # 控制客户端模式
+                    self.mouse_controller.position = (self.screen_width // 2, self.screen_height // 2)
+                    time.sleep(0.01)
+                    self.last_mouse_pos = self.mouse_controller.position
+                    self.mouse_listener_with_suppress()
+                    # 监听结束后重新聚焦
+                    self.mouse_focus = True
+                
         except KeyboardInterrupt:
             print("\n服务器关闭")
         except Exception as e:
             print(f"错误: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 if __name__ == '__main__':
