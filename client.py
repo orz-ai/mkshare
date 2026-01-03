@@ -5,7 +5,6 @@ MKShare Client - 鼠标键盘共享客户端
 """
 
 import socket
-import threading
 import json
 import logging
 import yaml
@@ -13,19 +12,18 @@ import sys
 import time
 from pathlib import Path
 from pynput import mouse
-from pynput.mouse import Controller as MouseController
 from screeninfo import get_monitors
 import colorlog
 import platform
 
-# Windows 特定导入
+# Windows API
 if platform.system() == 'Windows':
-    import win32api
-    import win32con
+    import ctypes
+    import ctypes.wintypes
 
 
 class MKShareClient:
-    """MKShare 客户端主类"""
+    """MKShare 客户端"""
     
     def __init__(self, config_path='config.yaml'):
         self.config = self._load_config(config_path)
@@ -34,23 +32,17 @@ class MKShareClient:
         # 网络配置
         self.server_host = self.config['network']['client']['server_host']
         self.server_port = self.config['network']['client']['server_port']
-        self.auto_reconnect = self.config['network']['client']['auto_reconnect']
-        self.reconnect_interval = self.config['network']['client']['reconnect_interval']
         
-        # 屏幕配置
-        self.edge_threshold = self.config['screen_switch']['edge_threshold']
-        self.edge_delay = self.config['screen_switch']['edge_delay']
-        
-        # 获取屏幕信息
+        # 屏幕信息
         self.monitors = get_monitors()
         if not self.monitors:
             self.logger.error("未检测到屏幕")
             sys.exit(1)
         
-        # 假设只有一个屏幕
         self.screen = self.monitors[0]
         self.screen_width = self.screen.width
         self.screen_height = self.screen.height
+        self.edge_threshold = self.config['screen_switch']['edge_threshold']
         
         self.logger.info(f"屏幕尺寸: {self.screen_width}x{self.screen_height}")
         
@@ -58,16 +50,12 @@ class MKShareClient:
         self.socket = None
         self.running = False
         self.connected = False
-        self.sharing_mode = False  # 是否在共享模式
+        self.sharing_mode = False
         
-        # 边缘检测
-        self.edge_timer = None
-        self.last_edge_time = 0
-        
-        # 鼠标控制器和锁定
-        self.mouse_controller = MouseController()
+        # 鼠标状态
         self.mouse_listener = None
-        self.last_mouse_pos = None  # 上次鼠标位置（用于计算增量）
+        self.last_mouse_pos = None
+        self.clip_rect = None
         
         self.logger.info("MKShare Client 初始化完成")
     
@@ -122,7 +110,9 @@ class MKShareClient:
         self.logger.info("客户端启动")
         
         # 连接服务器
-        self._connect_to_server()
+        if not self._connect_to_server():
+            self.logger.error("无法连接到服务器")
+            return
         
         # 启动鼠标监听
         self._start_mouse_listener()
@@ -130,15 +120,9 @@ class MKShareClient:
         # 主线程等待
         try:
             while self.running:
-                threading.Event().wait(1)
-                
-                # 自动重连
-                if not self.connected and self.auto_reconnect:
-                    self.logger.info("尝试重连...")
-                    self._connect_to_server()
-                    
+                time.sleep(0.1)
         except KeyboardInterrupt:
-            self.logger.info("接收到停止信号")
+            self.logger.info("停止信号")
             self.stop()
     
     def _connect_to_server(self):
@@ -147,12 +131,12 @@ class MKShareClient:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.server_host, self.server_port))
             self.connected = True
-            self.logger.info(f"已连接到服务器 {self.server_host}:{self.server_port}")
+            self.logger.info(f"已连接: {self.server_host}:{self.server_port}")
+            return True
         except Exception as e:
-            self.logger.error(f"连接服务器失败: {e}")
+            self.logger.error(f"连接失败: {e}")
             self.connected = False
-            if self.auto_reconnect:
-                time.sleep(self.reconnect_interval)
+            return False
     
     def _start_mouse_listener(self):
         """启动鼠标监听"""
@@ -162,119 +146,115 @@ class MKShareClient:
             on_scroll=self._on_mouse_scroll
         )
         self.mouse_listener.start()
-        self.logger.info("鼠标监听器已启动")
+        self.logger.info("鼠标监听已启动")
     
     def _on_mouse_move(self, x, y):
         """鼠标移动事件"""
-        # 检查是否在屏幕边缘
         if not self.sharing_mode:
+            # 检测右边缘
             if x >= self.screen_width - self.edge_threshold:
-                # 右边缘
-                current_time = time.time()
-                if current_time - self.last_edge_time >= self.edge_delay:
-                    self.logger.info("检测到右边缘，进入共享模式")
-                    self._enter_sharing_mode(x, y)
-                self.last_edge_time = current_time
+                self.logger.info("检测到右边缘，进入共享模式")
+                self._enter_sharing_mode()
         else:
-            # 共享模式下，计算移动增量
+            # 共享模式：计算增量并发送
             if self.last_mouse_pos:
                 dx = x - self.last_mouse_pos[0]
                 dy = y - self.last_mouse_pos[1]
                 
-                # 发送增量
-                if abs(dx) > 0 or abs(dy) > 0:
+                if dx != 0 or dy != 0:
                     self._send_message({
-                        'type': 'mouse_move_relative',
+                        'type': 'mouse_move',
                         'dx': dx,
                         'dy': dy
                     })
-                    self.logger.debug(f"鼠标增量: dx={dx}, dy={dy}")
             
             self.last_mouse_pos = (x, y)
+    
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件"""
         if self.sharing_mode:
-            # 发送鼠标点击
+            # 检测退出（在限制区域左边缘点击）
+            if self.clip_rect and x <= self.clip_rect[0] + 2:
+                self.logger.info("检测到退出信号")
+                self._exit_sharing_mode()
+                return
+            
+            # 发送点击事件
             button_name = button.name if hasattr(button, 'name') else str(button)
             self._send_message({
                 'type': 'mouse_click',
-                'x': x,
-                'y': y,
                 'button': button_name,
                 'pressed': pressed
             })
-            
-            # 检测退出共享模式（可以通过特定按键或边缘检测）
-            if pressed and x <= self.edge_threshold:
-                self.logger.info("检测到左边缘，退出共享模式")
-                self._exit_sharing_mode()
     
     def _on_mouse_scroll(self, x, y, dx, dy):
         """鼠标滚轮事件"""
         if self.sharing_mode:
             self._send_message({
                 'type': 'mouse_scroll',
-                'x': x,
-                'y': y,
                 'dx': dx,
                 'dy': dy
             })
     
-    def _enter_sharing_mode(self, x, y):
+    def _enter_sharing_mode(self):
         """进入共享模式"""
         self.sharing_mode = True
-        self.last_mouse_pos = (x, y)
         
-        # 使用 ClipCursor 限制鼠标在当前位置周围的小区域内（Windows）
         if platform.system() == 'Windows':
-            # 限制在当前位置周围 50x50 像素
-            left = x - 25
-            top = y - 25
-            right = x + 25
-            bottom = y + 25
-            win32api.ClipCursor((left, top, right, bottom))
-            self.logger.info(f"进入共享模式，鼠标限制在 ({left},{top})-({right},{bottom})")
+            # 获取当前鼠标位置
+            point = ctypes.wintypes.POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
+            x, y = point.x, point.y
+            self.last_mouse_pos = (x, y)
+            
+            # 限制在 100x100 像素区域
+            left = x - 50
+            top = y - 50
+            right = x + 50
+            bottom = y + 50
+            
+            # ClipCursor
+            rect = ctypes.wintypes.RECT(left, top, right, bottom)
+            ctypes.windll.user32.ClipCursor(ctypes.byref(rect))
+            self.clip_rect = (left, top, right, bottom)
+            
+            self.logger.info(f"进入共享模式，鼠标限制在 ({left},{top},{right},{bottom})")
         else:
-            self.logger.info("进入共享模式（非Windows系统，无鼠标限制）")
+            self.logger.warning("仅支持 Windows 系统")
     
     def _exit_sharing_mode(self):
         """退出共享模式"""
         self.sharing_mode = False
         self.last_mouse_pos = None
+        self.clip_rect = None
         
-        # 解除鼠标限制（Windows）
         if platform.system() == 'Windows':
-            win32api.ClipCursor(None)
-            self.logger.info("退出共享模式，解除鼠标限制")
+            ctypes.windll.user32.ClipCursor(None)
+            self.logger.info("退出共享模式")
     
     def _send_message(self, message):
-        """发送消息到服务器"""
-        if not self.connected or not self.socket:
+        """发送消息"""
+        if not self.connected:
             return
         
         try:
-            json_msg = json.dumps(message) + '\n'
-            self.socket.sendall(json_msg.encode('utf-8'))
-            self.logger.debug(f"发送消息: {message['type']}")
+            data = json.dumps(message) + '\n'
+            self.socket.sendall(data.encode('utf-8'))
         except Exception as e:
-            self.logger.error(f"发送消息失败: {e}")
+            self.logger.error(f"发送失败: {e}")
             self.connected = False
-            try:
-                self.socket.close()
-            except:
-                pass
     
     def stop(self):
         """停止客户端"""
-        self.logger.info("正在停止客户端...")
+        self.logger.info("停止客户端...")
         self.running = False
-        self.sharing_mode = False
         
-        # 停止鼠标监听
+        if self.sharing_mode:
+            self._exit_sharing_mode()
+        
         if self.mouse_listener:
             self.mouse_listener.stop()
         
-        # 关闭socket
         if self.socket:
             try:
                 self.socket.close()
@@ -286,12 +266,8 @@ class MKShareClient:
 
 def main():
     """主函数"""
-    print("""
-╔══════════════════════════════════════╗
-║       MKShare Client v1.0            ║
-║   鼠标键盘共享 - 客户端               ║
-╚══════════════════════════════════════╝
-    """)
+    print("MKShare Client v1.0 - 鼠标键盘共享客户端")
+    print("=" * 50)
     
     client = MKShareClient()
     client.start()

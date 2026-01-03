@@ -12,12 +12,11 @@ import yaml
 import sys
 from pathlib import Path
 from pynput.mouse import Controller as MouseController, Button
-from pynput.keyboard import Controller as KeyboardController
 import colorlog
 
 
 class MKShareServer:
-    """MKShare 服务端主类"""
+    """MKShare 服务端"""
     
     def __init__(self, config_path='config.yaml'):
         self.config = self._load_config(config_path)
@@ -27,9 +26,8 @@ class MKShareServer:
         self.host = self.config['network']['server']['host']
         self.port = self.config['network']['server']['port']
         
-        # 控制器
+        # 鼠标控制器
         self.mouse = MouseController()
-        self.keyboard = KeyboardController()
         
         # 服务器状态
         self.server_socket = None
@@ -92,7 +90,7 @@ class MKShareServer:
             self.server_socket.listen(5)
             self.running = True
             
-            self.logger.info(f"服务器启动成功，监听 {self.host}:{self.port}")
+            self.logger.info(f"服务器启动: {self.host}:{self.port}")
             
             # 接受客户端连接
             accept_thread = threading.Thread(target=self._accept_clients, daemon=True)
@@ -103,7 +101,7 @@ class MKShareServer:
                 while self.running:
                     threading.Event().wait(1)
             except KeyboardInterrupt:
-                self.logger.info("接收到停止信号")
+                self.logger.info("停止信号")
                 self.stop()
                 
         except Exception as e:
@@ -135,18 +133,18 @@ class MKShareServer:
         buffer = ""
         try:
             while self.running:
-                data = client_socket.recv(4096).decode('utf-8')
+                data = client_socket.recv(8192).decode('utf-8')
                 if not data:
                     break
                 
                 buffer += data
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
-                    if line:
-                        self._process_message(line)
+                    if line.strip():
+                        self._process_message(line.strip())
                         
         except Exception as e:
-            self.logger.error(f"处理客户端 {address} 消息失败: {e}")
+            self.logger.error(f"处理客户端失败: {e}")
         finally:
             self.logger.info(f"客户端断开: {address}")
             client_socket.close()
@@ -154,41 +152,27 @@ class MKShareServer:
                 self.clients.remove((client_socket, address))
     
     def _process_message(self, message):
-        """处理接收到的消息"""
+        """处理消息"""
         try:
             msg = json.loads(message)
             msg_type = msg.get('type')
             
             if msg_type == 'mouse_move':
                 self._handle_mouse_move(msg)
-            elif msg_type == 'mouse_move_relative':
-                self._handle_mouse_move_relative(msg)
             elif msg_type == 'mouse_click':
                 self._handle_mouse_click(msg)
             elif msg_type == 'mouse_scroll':
                 self._handle_mouse_scroll(msg)
-            elif msg_type == 'mouse_drag':
-                self._handle_mouse_drag(msg)
             else:
-                self.logger.warning(f"未知的消息类型: {msg_type}")
+                self.logger.warning(f"未知消息: {msg_type}")
                 
         except json.JSONDecodeError as e:
-            self.logger.error(f"JSON 解析失败: {e}")
+            self.logger.error(f"JSON解析失败: {e}")
         except Exception as e:
             self.logger.error(f"处理消息失败: {e}")
     
     def _handle_mouse_move(self, msg):
-        """处理鼠标移动（绝对位置）"""
-        try:
-            x = msg['x']
-            y = msg['y']
-            self.mouse.position = (x, y)
-            self.logger.debug(f"鼠标移动到: ({x}, {y})")
-        except Exception as e:
-            self.logger.error(f"鼠标移动失败: {e}")
-    
-    def _handle_mouse_move_relative(self, msg):
-        """处理鼠标移动（相对移动）"""
+        """处理鼠标移动"""
         try:
             dx = msg['dx']
             dy = msg['dy']
@@ -196,9 +180,9 @@ class MKShareServer:
             new_x = current_x + dx
             new_y = current_y + dy
             self.mouse.position = (new_x, new_y)
-            self.logger.debug(f"鼠标相对移动: ({dx}, {dy}) -> ({new_x}, {new_y})")
+            self.logger.debug(f"鼠标移动: dx={dx}, dy={dy}")
         except Exception as e:
-            self.logger.error(f"鼠标相对移动失败: {e}")
+            self.logger.error(f"鼠标移动失败: {e}")
     
     def _handle_mouse_click(self, msg):
         """处理鼠标点击"""
@@ -206,7 +190,6 @@ class MKShareServer:
             button_name = msg['button']
             pressed = msg['pressed']
             
-            # 转换按钮名称
             button_map = {
                 'left': Button.left,
                 'right': Button.right,
@@ -234,20 +217,9 @@ class MKShareServer:
         except Exception as e:
             self.logger.error(f"鼠标滚动失败: {e}")
     
-    def _handle_mouse_drag(self, msg):
-        """处理鼠标拖拽"""
-        try:
-            x = msg['x']
-            y = msg['y']
-            # 拖拽时移动鼠标即可，按钮状态已经在 mouse_click 中处理
-            self.mouse.position = (x, y)
-            self.logger.debug(f"鼠标拖拽到: ({x}, {y})")
-        except Exception as e:
-            self.logger.error(f"鼠标拖拽失败: {e}")
-    
     def stop(self):
         """停止服务器"""
-        self.logger.info("正在停止服务器...")
+        self.logger.info("停止服务器...")
         self.running = False
         
         # 关闭所有客户端连接
@@ -269,12 +241,8 @@ class MKShareServer:
 
 def main():
     """主函数"""
-    print("""
-╔══════════════════════════════════════╗
-║       MKShare Server v1.0            ║
-║   鼠标键盘共享 - 服务端               ║
-╚══════════════════════════════════════╝
-    """)
+    print("MKShare Server v1.0 - 鼠标键盘共享服务端")
+    print("=" * 50)
     
     server = MKShareServer()
     server.start()
