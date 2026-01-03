@@ -56,15 +56,13 @@ class MouseShareServer:
             self.is_controlling_client = False
     
     def on_move(self, x, y):
-        """鼠标移动事件处理"""
+        """鼠标移动事件处理，返回False抑制事件"""
         if not self.client_socket:
-            return
+            return True  # 允许事件通过
         
         # 检测是否在边缘
         at_right_edge = x >= self.screen_width - EDGE_THRESHOLD
         at_left_edge = x <= EDGE_THRESHOLD
-        at_top_edge = y <= EDGE_THRESHOLD
-        at_bottom_edge = y >= self.screen_height - EDGE_THRESHOLD
         
         # 进入客户端控制模式
         if not self.is_controlling_client:
@@ -74,35 +72,29 @@ class MouseShareServer:
                 self.last_pos = (x, y)
                 # 发送初始位置到客户端（屏幕左侧）
                 self.send_to_client(0, y)
-                # 抑制鼠标（将鼠标移回边缘内）
-                from pynput.mouse import Controller
-                controller = Controller()
-                controller.position = (self.screen_width - EDGE_THRESHOLD - 1, y)
-                return
+                return False  # 抑制此事件
         
         # 在客户端控制模式下
         if self.is_controlling_client:
             # 计算相对移动
             dx = x - self.last_pos[0]
             dy = y - self.last_pos[1]
+            self.last_pos = (x, y)
             
             # 发送相对移动到客户端
             if dx != 0 or dy != 0:
                 self.send_to_client(dx, dy, relative=True)
             
-            # 抑制服务端鼠标：将鼠标固定在边缘位置
-            from pynput.mouse import Controller
-            controller = Controller()
-            fixed_x = self.screen_width - EDGE_THRESHOLD - 1
-            controller.position = (fixed_x, y)
-            self.last_pos = (fixed_x, y)
-            
             # 检测是否返回服务端（鼠标向左移动到边缘）
             if at_left_edge and dx < 0:
                 print("返回服务端控制")
                 self.is_controlling_client = False
-                # 将鼠标移到服务端右侧
-                controller.position = (self.screen_width - EDGE_THRESHOLD - 100, y)
+                return True  # 允许事件，返回服务端控制
+            
+            # 在客户端控制模式下抑制所有鼠标事件
+            return False
+        
+        return True  # 默认允许事件通过
     
     def send_to_client(self, x, y, relative=False):
         """发送鼠标位置到客户端"""
@@ -123,9 +115,9 @@ class MouseShareServer:
         server_thread = threading.Thread(target=self.start_server, daemon=True)
         server_thread.start()
         
-        # 启动鼠标监听
+        # 启动鼠标监听，启用suppress以便抑制事件
         print("开始监听鼠标移动...")
-        with mouse.Listener(on_move=self.on_move) as listener:
+        with mouse.Listener(on_move=self.on_move, suppress=True) as listener:
             listener.join()
 
 if __name__ == '__main__':
