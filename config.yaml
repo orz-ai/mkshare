@@ -1,4 +1,4 @@
-# MKShare 配置文件
+# 鼠标共享配置文件
 version: 1.0
 
 # 网络设置
@@ -10,28 +10,7 @@ network:
   client:
     server_host: 192.168.31.199  # 修改为服务器的 IP 地址
     server_port: 41234
-    auto_reconnect: true
-    reconnect_interval: 5
 
 # 屏幕切换设置
 screen_switch:
   edge_threshold: 5      # 边缘触发阈值（像素）
-  edge_delay: 0.3        # 边缘停留延迟（秒）
-
-# 输入设置
-input:
-  mouse:
-    sensitivity: 1.0
-    smooth_movement: true
-  keyboard:
-    enabled: true
-
-# 剪贴板设置
-clipboard:
-  enabled: false         # 暂时禁用剪贴板同步
-  monitor_interval: 0.5
-
-# 日志设置
-logging:
-  level: INFO           # DEBUG, INFO, WARNING, ERROR
-  file: logs/mkshare.log

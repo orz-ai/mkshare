@@ -4,31 +4,42 @@
 """
 import socket
 import json
+import yaml
+import platform
 from pynput.mouse import Controller
 
-# 配置
-SERVER_HOST = '192.168.31.199'  # 修改为你的服务端IP地址
-SERVER_PORT = 9999
 
 class MouseShareClient:
-    def __init__(self):
-        self.controller = Controller()
+    def __init__(self, config_path='config.yaml'):
+        # 加载配置
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        self.server_host = config['network']['client']['server_host']
+        self.server_port = config['network']['client']['server_port']
+        
+        # 解决Windows缩放偏移问题
+        if platform.system().lower() == 'windows':
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        
+        self.mouse_controller = Controller()
         self.socket = None
         
     def connect_to_server(self):
         """连接到服务器"""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        print(f"正在连接到 {SERVER_HOST}:{SERVER_PORT}...")
-        self.socket.connect((SERVER_HOST, SERVER_PORT))
+        print(f"正在连接到 {self.server_host}:{self.server_port}...")
+        self.socket.connect((self.server_host, self.server_port))
         print("已连接到服务器")
     
-    def receive_and_move(self):
+    def receive_and_process(self):
         """接收并处理鼠标移动命令"""
         buffer = ""
         
         while True:
             try:
-                data = self.socket.recv(1024).decode()
+                data = self.socket.recv(4096).decode('utf-8')
                 if not data:
                     print("服务器断开连接")
                     break
@@ -39,7 +50,7 @@ class MouseShareClient:
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
                     if line.strip():
-                        self.process_command(line)
+                        self.process_command(line.strip())
                         
             except Exception as e:
                 print(f"接收数据错误: {e}")
@@ -49,22 +60,25 @@ class MouseShareClient:
         """处理单条命令"""
         try:
             data = json.loads(command)
+            cmd_type = data['type']
             x = data['x']
             y = data['y']
-            relative = data.get('relative', False)
             
-            if relative:
+            if cmd_type == 'move':
                 # 相对移动
-                current_x, current_y = self.controller.position
+                current_x, current_y = self.mouse_controller.position
                 new_x = current_x + x
                 new_y = current_y + y
-                self.controller.position = (new_x, new_y)
-                print(f"相对移动: ({x}, {y}) -> 新位置: ({new_x}, {new_y})")
-            else:
-                # 绝对移动
-                self.controller.position = (x, y)
-                print(f"绝对移动到: ({x}, {y})")
+                self.mouse_controller.position = (new_x, new_y)
+                # print(f"相对移动: ({x}, {y})")
                 
+            elif cmd_type == 'move_to':
+                # 绝对移动
+                self.mouse_controller.position = (x, y)
+                print(f"鼠标切换到客户端，位置: ({x}, {y})")
+                
+        except json.JSONDecodeError as e:
+            print(f"JSON解析错误: {e}, 命令: {command}")
         except Exception as e:
             print(f"处理命令错误: {e}")
     
@@ -72,7 +86,8 @@ class MouseShareClient:
         """运行客户端"""
         try:
             self.connect_to_server()
-            self.receive_and_move()
+            print("等待接收鼠标控制命令...")
+            self.receive_and_process()
         except KeyboardInterrupt:
             print("\n客户端退出")
         except Exception as e:
@@ -80,6 +95,7 @@ class MouseShareClient:
         finally:
             if self.socket:
                 self.socket.close()
+
 
 if __name__ == '__main__':
     client = MouseShareClient()
