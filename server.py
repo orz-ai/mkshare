@@ -161,6 +161,8 @@ class MKShareServer:
             
             if msg_type == 'mouse_move':
                 self._handle_mouse_move(msg)
+            elif msg_type == 'mouse_move_relative':
+                self._handle_mouse_move_relative(msg)
             elif msg_type == 'mouse_click':
                 self._handle_mouse_click(msg)
             elif msg_type == 'mouse_scroll':
@@ -176,7 +178,7 @@ class MKShareServer:
             self.logger.error(f"处理消息失败: {e}")
     
     def _handle_mouse_move(self, msg):
-        """处理鼠标移动"""
+        """处理鼠标移动（绝对位置）"""
         try:
             x = msg['x']
             y = msg['y']
@@ -184,6 +186,19 @@ class MKShareServer:
             self.logger.debug(f"鼠标移动到: ({x}, {y})")
         except Exception as e:
             self.logger.error(f"鼠标移动失败: {e}")
+    
+    def _handle_mouse_move_relative(self, msg):
+        """处理鼠标移动（相对移动）"""
+        try:
+            dx = msg['dx']
+            dy = msg['dy']
+            current_x, current_y = self.mouse.position
+            new_x = current_x + dx
+            new_y = current_y + dy
+            self.mouse.position = (new_x, new_y)
+            self.logger.debug(f"鼠标相对移动: ({dx}, {dy}) -> ({new_x}, {new_y})")
+        except Exception as e:
+            self.logger.error(f"鼠标相对移动失败: {e}")
     
     def _handle_mouse_click(self, msg):
         """处理鼠标点击"""

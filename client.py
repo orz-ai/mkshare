@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 from pynput import mouse
+from pynput.mouse import Controller as MouseController
 from screeninfo import get_monitors
 import colorlog
 
@@ -57,8 +58,12 @@ class MKShareClient:
         self.edge_timer = None
         self.last_edge_time = 0
         
-        # 鼠标监听器
+        # 鼠标控制器和锁定
+        self.mouse_controller = MouseController()
         self.mouse_listener = None
+        self.lock_position = None  # 鼠标锁定位置
+        self.last_mouse_pos = None  # 上次鼠标位置（用于计算增量）
+        self.is_resetting_mouse = False  # 是否正在重置鼠标（避免递归）
         
         self.logger.info("MKShare Client 初始化完成")
     
@@ -164,15 +169,33 @@ class MKShareClient:
                 current_time = time.time()
                 if current_time - self.last_edge_time >= self.edge_delay:
                     self.logger.info("检测到右边缘，进入共享模式")
-                    self._enter_sharing_mode()
+                    self._enter_sharing_mode(x, y)
                 self.last_edge_time = current_time
         else:
-            # 共享模式下发送鼠标移动
-            self._send_message({
-                'type': 'mouse_move',
-                'x': x,
-                'y': y
-            })
+            # 共享模式下锁定本地鼠标
+            if self.is_resetting_mouse:
+                return
+            
+            # 计算鼠标移动增量
+            if self.last_mouse_pos:
+                dx = x - self.last_mouse_pos[0]
+                dy = y - self.last_mouse_pos[1]
+                
+                # 只有真实移动才发送（过滤掉重置产生的移动）
+                if abs(dx) > 0 or abs(dy) > 0:
+                    # 发送相对移动而不是绝对位置
+                    self._send_message({
+                        'type': 'mouse_move_relative',
+                        'dx': dx,
+                        'dy': dy
+                    })
+            
+            # 重置鼠标到锁定位置
+            self.last_mouse_pos = (x, y)
+            self.is_resetting_mouse = True
+            self.mouse_controller.position = self.lock_position
+            self.is_resetting_mouse = False
+            self.last_mouse_pos = self.lock_position
     
     def _on_mouse_click(self, x, y, button, pressed):
         """鼠标点击事件"""
@@ -185,10 +208,17 @@ class MKShareClient:
                 'y': y,
                 'button': button_name,
                 'pressed': pressed
-            })
-            
-            # 检测退出共享模式（可以通过特定按键或边缘检测）
-            if pressed and x <= self.edge_threshold:
+            }), x, y):
+        """进入共享模式"""
+        self.sharing_mode = True
+        # 设置鼠标锁定位置（屏幕中心）
+        self.lock_position = (self.screen_width // 2, self.screen_height // 2)
+        self.last_mouse_pos = self.lock_position
+        # 立即将鼠标移动到锁定位置
+        self.is_resetting_mouse = True
+        self.mouse_controller.position = self.lock_position
+        self.is_resetting_mouse = False
+        self.logger.info(f"进入共享模式，鼠标锁定在 {self.lock_position}self.edge_threshold:
                 self.logger.info("检测到左边缘，退出共享模式")
                 self._exit_sharing_mode()
     
@@ -205,7 +235,9 @@ class MKShareClient:
     
     def _enter_sharing_mode(self):
         """进入共享模式"""
-        self.sharing_mode = True
+        self.shck_position = None
+        self.last_mouse_pos = None
+        self.loaring_mode = True
         self.logger.info("进入共享模式")
         # 可以添加视觉提示或声音提示
     
