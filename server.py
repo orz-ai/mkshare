@@ -163,7 +163,7 @@ class MouseShareServer:
             if not self.is_controlling_client:
                 return False  # 停止监听
             
-            # 计算相对移动
+            # 计算相对移动（基于上次位置）
             dx = x - self.last_mouse_pos[0]
             dy = y - self.last_mouse_pos[1]
             
@@ -176,14 +176,19 @@ class MouseShareServer:
                 }
                 self.udp_socket.sendto(json.dumps(msg).encode('utf-8'), self.client_udp_addr)
             
-            # 更新位置但不实际移动鼠标（suppress模式会处理）
-            self.last_mouse_pos = (x, y)
+            # 获取实际鼠标位置进行边界检测
+            actual_pos = self.mouse_controller.position
             
-            # 检测鼠标是否移出边界（回到服务端的边缘检测）
-            if x <= 200 or y <= 200 or x >= self.screen_width - 200 or y >= self.screen_height - 200:
+            # 检测鼠标是否接近屏幕边界（使用实际位置）
+            if (actual_pos[0] <= 200 or actual_pos[1] <= 200 or 
+                actual_pos[0] >= self.screen_width - 200 or actual_pos[1] >= self.screen_height - 200):
                 # 将鼠标移动到屏幕中心
-                self.mouse_controller.position = (self.screen_width // 2, self.screen_height // 2)
-                self.last_mouse_pos = self.mouse_controller.position
+                center_x = int(self.screen_width / 2)
+                center_y = int(self.screen_height / 2)
+                self.mouse_controller.position = (center_x, center_y)
+            
+            # 更新上次位置（使用当前虚拟位置）
+            self.last_mouse_pos = (x, y)
             
             return True  # 继续监听
         
