@@ -160,15 +160,18 @@ class MouseShareServer:
     def mouse_listener_with_suppress(self):
         """使用suppress模式的鼠标监听（控制客户端时）"""
         def on_move_suppressed(x, y):
-            if not self.is_controlling_client:
+            if self.is_controlling_client == False:
                 return False  # 停止监听
             
-            # 计算相对移动（基于上次位置）
-            dx = x - self.last_mouse_pos[0]
-            dy = y - self.last_mouse_pos[1]
+            # 获取上次位置
+            last_pos = self.last_mouse_pos
+            
+            # 计算相对移动
+            dx = x - last_pos[0]
+            dy = y - last_pos[1]
             
             # 发送相对移动到客户端
-            if (dx != 0 or dy != 0) and self.client_udp_addr:
+            if self.client_udp_addr:
                 msg = {
                     'type': 'move',
                     'x': dx,
@@ -176,18 +179,13 @@ class MouseShareServer:
                 }
                 self.udp_socket.sendto(json.dumps(msg).encode('utf-8'), self.client_udp_addr)
             
-            # 获取实际鼠标位置进行边界检测
+            # 检测边界 - 注意这里的逻辑和src完全一致
             actual_pos = self.mouse_controller.position
+            if (not self.mouse_focus and actual_pos[0] <= 200) or actual_pos[1] <= 200 or \
+                    actual_pos[0] >= self.screen_width - 200 or actual_pos[1] >= self.screen_height - 200:
+                self.mouse_controller.position = (int(self.screen_width / 2), int(self.screen_height / 2))
             
-            # 检测鼠标是否接近屏幕边界（使用实际位置）
-            if (actual_pos[0] <= 200 or actual_pos[1] <= 200 or 
-                actual_pos[0] >= self.screen_width - 200 or actual_pos[1] >= self.screen_height - 200):
-                # 将鼠标移动到屏幕中心
-                center_x = int(self.screen_width / 2)
-                center_y = int(self.screen_height / 2)
-                self.mouse_controller.position = (center_x, center_y)
-            
-            # 更新上次位置（使用当前虚拟位置）
+            # 更新上次位置 - 关键：必须每次都更新
             self.last_mouse_pos = (x, y)
             
             return True  # 继续监听

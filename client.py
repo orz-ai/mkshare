@@ -98,14 +98,13 @@ class MouseShareClient:
                 msg_type = msg['type']
                 
                 if msg_type == 'move':
-                    # 相对移动
+                    # 相对移动 - 使用move方法而不是position赋值
                     if self.mouse_focus:
-                        current_x, current_y = self.mouse_controller.position
-                        new_x = current_x + msg['x']
-                        new_y = current_y + msg['y']
-                        self.mouse_controller.position = (new_x, new_y)
+                        # 直接使用相对移动，pynput会自动处理
+                        self.mouse_controller.move(msg['x'], msg['y'])
                         
-                        # 判断是否移出屏幕边界（返回服务端）
+                        # 获取移动后的位置判断是否移出边界
+                        new_x, new_y = self.mouse_controller.position
                         if self.judge_move_out(new_x, new_y):
                             self.send_mouse_back(new_x, new_y)
                 
