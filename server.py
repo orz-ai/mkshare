@@ -185,8 +185,8 @@ class MouseShareServer:
                     actual_pos[0] >= self.screen_width - 200 or actual_pos[1] >= self.screen_height - 200:
                 self.mouse_controller.position = (int(self.screen_width / 2), int(self.screen_height / 2))
             
-            # 更新上次位置 - 关键：必须每次都更新
-            self.last_mouse_pos = (x, y)
+            # 更新上次位置 - 关键：必须用实际鼠标位置，不是虚拟位置(x,y)
+            self.last_mouse_pos = self.mouse_controller.position
             
             return True  # 继续监听
         

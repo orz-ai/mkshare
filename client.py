@@ -101,10 +101,12 @@ class MouseShareClient:
                     # 相对移动 - 使用move方法而不是position赋值
                     if self.mouse_focus:
                         # 直接使用相对移动，pynput会自动处理
+                        print(f"收到移动: dx={msg['x']}, dy={msg['y']}")
                         self.mouse_controller.move(msg['x'], msg['y'])
                         
                         # 获取移动后的位置判断是否移出边界
                         new_x, new_y = self.mouse_controller.position
+                        print(f"移动后位置: ({new_x}, {new_y})")
                         if self.judge_move_out(new_x, new_y):
                             self.send_mouse_back(new_x, new_y)
                 
